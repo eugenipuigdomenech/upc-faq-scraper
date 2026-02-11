@@ -67,10 +67,13 @@ def upload_to_google_sheets(faqs, spreadsheet_name: str, worksheet_name: str = "
 
 if __name__ == "__main__":
 
-    url = "https://www.upc.edu/ca/graus/faqs/preinscripcio-i-assignacio"
+     url = "https://www.upc.edu/ca/graus/faqs/preinscripcio-i-assignacio" # UPC faqs
+    # url = "https://eseiaat.upc.edu/ca/curs-actual/treballs-fi-estudis/preguntes-frequents" # ESEIAAT tfe
+    # url = "https://eseiaat.upc.edu/ca/empresa/preguntes-frequents" # ESEIAAT empresa
+    # url = "https://eseiaat.upc.edu/ca/international-office/incomings/faqs" # ESEIAAT mobilitat
+    # url = "https://eseiaat.upc.edu/ca/acte-graduacio/preguntes-mes-frequents" # ESEIAAT acte graduació
 
     faqs = scrape_faqs(url)
-
 
 
     # Pujar a upc-faqs (google sheets)
