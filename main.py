@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 
 
-# SCRAPING
+# SCRAPING obtenir les preguntes i respostes
 def scrape_faqs(url: str):
     r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
     r.raise_for_status()
@@ -29,8 +29,7 @@ def scrape_faqs(url: str):
 
     return faqs
 
-
-# GOOGLE SHEETS
+# GOOGLE SHEETS obtenir la pagina de google sheets on anirà
 def get_worksheet_by_title(spreadsheet_title: str, worksheet_name: str):
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -50,25 +49,28 @@ def get_worksheet_by_title(spreadsheet_title: str, worksheet_name: str):
 
     return ws
 
+# GOOGLE SHEETS Sincronitza les FAQs del web amb el full de càlcul aplicant control de duplicats i registre de canvis.
 def append_with_traceability(ws, faqs, font_url: str):
+
+    #1 Lectura del sheets
     values = ws.get_all_values()
 
+    #2 Validació de la capçalera
     if not values:
         raise RuntimeError("El full està buit: falta la capçalera (fila 1).")
-
     header = values[0]
-    # Esperem aquests noms exactes. Si no coincideixen, canvia'ls aquí.
+
+    #3 Obtenció dels índexs de columnes
     # Tema | Pregunta | Resposta | Estat | Data creació | Darrera modificació | Persona darrera modificació | Dades amb actualització anual | Font
     idx_tema = header.index("Tema")
     idx_preg = header.index("Pregunta")
     idx_resp = header.index("Resposta")
 
-    # Per traçabilitat:
-    # - existing_questions: per saber si una pregunta ja existeix
-    # - existing_pairs: per saber si pregunta+resposta ja existeix (no duplicar exactes)
+    #4 Creació dels conjunts per evitar duplicats
     existing_questions = set()
     existing_pairs = set()
 
+    #5 Recorregut de files existents
     for row in values[1:]:
         # Evita files curtes
         if len(row) <= max(idx_tema, idx_preg, idx_resp):
@@ -79,20 +81,22 @@ def append_with_traceability(ws, faqs, font_url: str):
         existing_questions.add((tema, preg))
         existing_pairs.add((tema, preg, resp))
 
-    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    #6 Generació del Timestamp
+    now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    #7 Definició de valors per defecte
     tema_default = "-"         # segons el teu cap
     estat_default = "Pendent"
     persona_default = "Agent IA"
     anual_default = "-"
     last_modified_default = "" # “a mirar” → buit
-
     new_rows = []
     skipped_same = 0
     skipped_question_only = 0
     added_new = 0
     added_changed = 0
 
+    #8 Recorregut de FAQs scrapejades
     for pregunta, resposta in faqs:
         pregunta = pregunta.strip()
         resposta = resposta.strip()
@@ -100,12 +104,12 @@ def append_with_traceability(ws, faqs, font_url: str):
         pair_key = (tema_default, pregunta, resposta)
         q_key = (tema_default, pregunta)
 
-        # 1) Si ja existeix exactament la mateixa pregunta+resposta -> NO afegir
+        # 9 Control de duplicat exacte. Si ja existeix exactament la mateixa pregunta+resposta -> NO afegir
         if pair_key in existing_pairs:
             skipped_same += 1
             continue
 
-        # 2) Si existeix la pregunta però la resposta és diferent -> afegir nova fila (traçabilitat)
+        # 10 Detecció de canvi de resposta. Si existeix la pregunta però la resposta és diferent -> afegir nova fila (traçabilitat)
         if q_key in existing_questions:
             added_changed += 1
         else:
@@ -116,13 +120,14 @@ def append_with_traceability(ws, faqs, font_url: str):
             pregunta,                # Pregunta
             resposta,                # Resposta
             estat_default,           # Estat
-            created_at,              # Data creació (moment de descàrrega)
-            last_modified_default,   # Darrera modificació (buit)
+            now_ts,              # Data creació (moment de descàrrega)
+            now_ts,   # Darrera modificació (moment d'actualització)
             persona_default,         # Persona darrera modificació
             anual_default,           # Dades amb actualització anual
             font_url                 # Font
         ])
 
+    #11 Construcció de noves files
     before_rows = len(values)
     if new_rows:
         ws.append_rows(new_rows, value_input_option="RAW")
@@ -137,9 +142,9 @@ def append_with_traceability(ws, faqs, font_url: str):
         print(f"- Saltades (mateixa pregunta i mateixa resposta): {skipped_same}")
         print(f"FILES ACTUALS: {before_rows}")
 
-
 # MAIN
 if __name__ == "__main__":
+
     url = "https://www.upc.edu/ca/graus/faqs/preinscripcio-i-assignacio"
 
     faqs = scrape_faqs(url)
@@ -148,5 +153,5 @@ if __name__ == "__main__":
     SPREADSHEET_TITLE = "Proves-faqs-mentors"
     WORKSHEET_NAME = "FAQs"   # IMPORTANT: posa el nom exacte de la pestanya
 
-    ws = get_worksheet_by_title(SPREADSHEET_TITLE, WORKSHEET_NAME) #peta
+    ws = get_worksheet_by_title(SPREADSHEET_TITLE, WORKSHEET_NAME)
     append_with_traceability(ws, faqs, font_url=url)
