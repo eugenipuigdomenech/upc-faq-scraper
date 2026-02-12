@@ -65,21 +65,29 @@ def append_with_traceability(ws, faqs, font_url: str):
     idx_tema = header.index("Tema")
     idx_preg = header.index("Pregunta")
     idx_resp = header.index("Resposta")
+    idx_data_creacio = header.index("Data creació")
+    idx_darrera_mod = header.index("Darrera modificació")
+    idx_persona_mod = header.index("Persona darrera modificació")
+    idx_font = header.index("Font")
 
     #4 Creació dels conjunts per evitar duplicats
     existing_questions = set()
     existing_pairs = set()
+    question_to_row = {}  # (tema, pregunta) -> row_num (1-indexed)
+    question_to_creation = {}  # (tema, pregunta) -> data_creacio_original
 
     #5 Recorregut de files existents
-    for row in values[1:]:
-        # Evita files curtes
+    for i, row in enumerate(values[1:], start=2):  # fila real a Sheets (1-indexed) ✅ NEW
         if len(row) <= max(idx_tema, idx_preg, idx_resp):
             continue
         tema = row[idx_tema].strip()
         preg = row[idx_preg].strip()
         resp = row[idx_resp].strip()
-        existing_questions.add((tema, preg))
-        existing_pairs.add((tema, preg, resp))
+        existing_pairs.add((preg,resp))
+        question_to_row[(tema, preg)] = i
+        created = row[idx_data_creacio].strip() if len(row) > idx_data_creacio else ""
+        if preg not in question_to_creation and created:
+            question_to_creation[preg] = created
 
     #6 Generació del Timestamp
     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -94,6 +102,7 @@ def append_with_traceability(ws, faqs, font_url: str):
     skipped_same = 0
     skipped_question_only = 0
     added_new = 0
+    updated_changed = 0
     added_changed = 0
 
     #8 Recorregut de FAQs scrapejades
@@ -101,40 +110,36 @@ def append_with_traceability(ws, faqs, font_url: str):
         pregunta = pregunta.strip()
         resposta = resposta.strip()
 
-        pair_key = (tema_default, pregunta, resposta)
-        q_key = (tema_default, pregunta)
+        pair_key = (pregunta, resposta)
+        q_key = pregunta
 
-        # 9 Control de duplicat exacte. Si ja existeix exactament la mateixa pregunta+resposta -> NO afegir
+        # 8.1 Mateixa pregunta i Mateixa resposta -> NO afegir
         if pair_key in existing_pairs:
             skipped_same += 1
             continue
 
-        # 10 Detecció de canvi de resposta. Si existeix la pregunta però la resposta és diferent -> afegir nova fila (traçabilitat)
-        if q_key in existing_questions:
+        # 8.2 Mateixa pregunta i Diferent resposta -> Actualitzar
+        if q_key in question_to_creation:
             added_changed += 1
+            created_ts = question_to_creation[q_key]
         else:
             added_new += 1
+            created_ts = now_ts  # primera vegada que la veiem
 
+        # 8.3 Diferent pregunta i Diferent resposta -> afegeix nova fila
         new_rows.append([
-            tema_default,            # Tema
-            pregunta,                # Pregunta
-            resposta,                # Resposta
-            estat_default,           # Estat
-            now_ts,              # Data creació (moment de descàrrega)
-            now_ts,   # Darrera modificació (moment d'actualització)
-            persona_default,         # Persona darrera modificació
-            anual_default,           # Dades amb actualització anual
-            font_url                 # Font
+            tema_default, pregunta, resposta, estat_default,
+            created_ts, now_ts, persona_default, anual_default, font_url
         ])
 
-    #11 Construcció de noves files
+    #9 Construcció de noves files
     before_rows = len(values)
     if new_rows:
         ws.append_rows(new_rows, value_input_option="RAW")
         after_rows = len(ws.get_all_values())
         print(f"OK: afegides {len(new_rows)} files.")
         print(f"- Noves (pregunta no existia): {added_new}")
-        print(f"- Traçabilitat (pregunta existia, resposta diferent): {added_changed}")
+        print(f"- Canvis (pregunta existia, resposta diferent): {added_changed}")
         print(f"- Saltades (mateixa pregunta i mateixa resposta): {skipped_same}")
         print(f"FILES ABANS: {before_rows} | FILES DESPRÉS: {after_rows}")
     else:
