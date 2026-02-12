@@ -1,36 +1,23 @@
 import requests
 from bs4 import BeautifulSoup
-import csv
 import gspread
 from google.oauth2.service_account import Credentials
+from datetime import datetime
 
-# ------------------------------------------------------------
-# Funció que extreu les FAQs (Pregunta + Resposta)
-# ------------------------------------------------------------
+
+# SCRAPING
 def scrape_faqs(url: str):
-
-    r = requests.get(
-        url,
-        timeout=20,
-        headers={"User-Agent": "Mozilla/5.0"}
-    )
-
+    r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
     r.raise_for_status()
-
     soup = BeautifulSoup(r.text, "html.parser")
 
-    q_tags = soup.select(
-        '#collapse-base a[data-toggle="collapse"][href^="#collapse-"]'
-    )
-
+    q_tags = soup.select('#collapse-base a[data-toggle="collapse"][href^="#collapse-"]')
     faqs = []
 
     for q in q_tags:
-
         question = q.get_text(" ", strip=True)
 
         target_id = q.get("href", "").lstrip("#")
-
         collapse_div = soup.find(id=target_id)
         if not collapse_div:
             continue
@@ -42,50 +29,124 @@ def scrape_faqs(url: str):
 
     return faqs
 
-def upload_to_google_sheets(faqs, spreadsheet_name: str, worksheet_name: str = "Sheet1"):
 
+# GOOGLE SHEETS
+def get_worksheet_by_title(spreadsheet_title: str, worksheet_name: str):
     scopes = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
-]
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
     creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
     client = gspread.authorize(creds)
 
-    sh = client.open("upc-faqs")
-    ws = sh.worksheet("faqs1")
+    # IMPORTANT: open() busca per títol a Drive. Si hi ha duplicats, pot confondre.
+    sh = client.open(spreadsheet_title)
+    ws = sh.worksheet(worksheet_name)
 
-    # Esborra contingut antic
-    ws.clear()
+    # Debug útil: confirma on estàs escrivint
+    print("CONNECTED SPREADSHEET TITLE:", sh.title)
+    print("CONNECTED WORKSHEET TITLE:", ws.title)
+    print("SPREADSHEET ID:", sh.id)
 
-    # Preparem dades amb capçalera
-    rows = [["Pregunta", "Resposta"]] + [[q, a] for q, a in faqs]
+    return ws
 
-    ws.update(values=rows, range_name="A1")
+def append_with_traceability(ws, faqs, font_url: str):
+    values = ws.get_all_values()
 
-    print("FAQs pujades correctament al Google Sheets (upc-faqs)")
+    if not values:
+        raise RuntimeError("El full està buit: falta la capçalera (fila 1).")
+
+    header = values[0]
+    # Esperem aquests noms exactes. Si no coincideixen, canvia'ls aquí.
+    # Tema | Pregunta | Resposta | Estat | Data creació | Darrera modificació | Persona darrera modificació | Dades amb actualització anual | Font
+    idx_tema = header.index("Tema")
+    idx_preg = header.index("Pregunta")
+    idx_resp = header.index("Resposta")
+
+    # Per traçabilitat:
+    # - existing_questions: per saber si una pregunta ja existeix
+    # - existing_pairs: per saber si pregunta+resposta ja existeix (no duplicar exactes)
+    existing_questions = set()
+    existing_pairs = set()
+
+    for row in values[1:]:
+        # Evita files curtes
+        if len(row) <= max(idx_tema, idx_preg, idx_resp):
+            continue
+        tema = row[idx_tema].strip()
+        preg = row[idx_preg].strip()
+        resp = row[idx_resp].strip()
+        existing_questions.add((tema, preg))
+        existing_pairs.add((tema, preg, resp))
+
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    tema_default = "-"         # segons el teu cap
+    estat_default = "Pendent"
+    persona_default = "Agent IA"
+    anual_default = "-"
+    last_modified_default = "" # “a mirar” → buit
+
+    new_rows = []
+    skipped_same = 0
+    skipped_question_only = 0
+    added_new = 0
+    added_changed = 0
+
+    for pregunta, resposta in faqs:
+        pregunta = pregunta.strip()
+        resposta = resposta.strip()
+
+        pair_key = (tema_default, pregunta, resposta)
+        q_key = (tema_default, pregunta)
+
+        # 1) Si ja existeix exactament la mateixa pregunta+resposta -> NO afegir
+        if pair_key in existing_pairs:
+            skipped_same += 1
+            continue
+
+        # 2) Si existeix la pregunta però la resposta és diferent -> afegir nova fila (traçabilitat)
+        if q_key in existing_questions:
+            added_changed += 1
+        else:
+            added_new += 1
+
+        new_rows.append([
+            tema_default,            # Tema
+            pregunta,                # Pregunta
+            resposta,                # Resposta
+            estat_default,           # Estat
+            created_at,              # Data creació (moment de descàrrega)
+            last_modified_default,   # Darrera modificació (buit)
+            persona_default,         # Persona darrera modificació
+            anual_default,           # Dades amb actualització anual
+            font_url                 # Font
+        ])
+
+    before_rows = len(values)
+    if new_rows:
+        ws.append_rows(new_rows, value_input_option="RAW")
+        after_rows = len(ws.get_all_values())
+        print(f"OK: afegides {len(new_rows)} files.")
+        print(f"- Noves (pregunta no existia): {added_new}")
+        print(f"- Traçabilitat (pregunta existia, resposta diferent): {added_changed}")
+        print(f"- Saltades (mateixa pregunta i mateixa resposta): {skipped_same}")
+        print(f"FILES ABANS: {before_rows} | FILES DESPRÉS: {after_rows}")
+    else:
+        print("OK: no s'ha afegit res (tot era duplicat exactament).")
+        print(f"- Saltades (mateixa pregunta i mateixa resposta): {skipped_same}")
+        print(f"FILES ACTUALS: {before_rows}")
 
 
+# MAIN
 if __name__ == "__main__":
-
-     url = "https://www.upc.edu/ca/graus/faqs/preinscripcio-i-assignacio" # UPC faqs
-    # url = "https://eseiaat.upc.edu/ca/curs-actual/treballs-fi-estudis/preguntes-frequents" # ESEIAAT tfe
-    # url = "https://eseiaat.upc.edu/ca/empresa/preguntes-frequents" # ESEIAAT empresa
-    # url = "https://eseiaat.upc.edu/ca/international-office/incomings/faqs" # ESEIAAT mobilitat
-    # url = "https://eseiaat.upc.edu/ca/acte-graduacio/preguntes-mes-frequents" # ESEIAAT acte graduació
+    url = "https://www.upc.edu/ca/graus/faqs/preinscripcio-i-assignacio"
 
     faqs = scrape_faqs(url)
+    print("TOTAL FAQS SCRAPEJADES:", len(faqs))
 
+    SPREADSHEET_TITLE = "Proves-faqs-mentors"
+    WORKSHEET_NAME = "FAQs"   # IMPORTANT: posa el nom exacte de la pestanya
 
-    # Pujar a upc-faqs (google sheets)
-    upload_to_google_sheets(
-        faqs,
-        spreadsheet_name="upc-faqs",  # titol del sheets
-        worksheet_name="faqs1"  # nom de la pestanya
-    )
-
-    print("TOTAL FAQS:", len(faqs))
-    # Mostrem per consola també
-    for i, (q, a) in enumerate(faqs, 1):
-        print(f"\n[{i}] Q: {q}")
-        print(f"A: {a}")
-        print("-" * 60)
+    ws = get_worksheet_by_title(SPREADSHEET_TITLE, WORKSHEET_NAME) #peta
+    append_with_traceability(ws, faqs, font_url=url)
