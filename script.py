@@ -3,7 +3,35 @@ from bs4 import BeautifulSoup
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
+import yaml
+# import pandas as pd  # per si vols importar .csv
 
+def load_config(path="config.yaml"):
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+def read_sources_from_sheet(client, spreadsheet_title: str, worksheet_name: str):
+    sh = client.open(spreadsheet_title)
+    ws = sh.worksheet(worksheet_name)
+
+    rows = ws.get_all_records()  # llegeix com a diccionaris (capçalera -> valor)
+    sources = []
+    for r in rows:
+        url = str(r.get("URL", "")).strip()
+        topic = str(r.get("Topic", "")).strip()
+
+        if url:
+            sources.append((url, topic))
+
+    return sources
+
+def get_gspread_client(credentials_file: str):
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = Credentials.from_service_account_file(credentials_file, scopes=scopes)
+    return gspread.authorize(creds)
 
 # SCRAPING obtenir les preguntes i respostes
 def scrape_faqs(url: str):
@@ -29,28 +57,19 @@ def scrape_faqs(url: str):
 
     return faqs
 
-# GOOGLE SHEETS obtenir la pagina de google sheets on anirà
-def get_worksheet_by_title(spreadsheet_title: str, worksheet_name: str):
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
-    client = gspread.authorize(creds)
+# GOOGLE SHEETS obtenir la pàgina de Google Sheets on anirà
+def get_worksheet_by_title(client, spreadsheet_title: str, worksheet_name: str):
 
-    # IMPORTANT: open() busca per títol a Drive. Si hi ha duplicats, pot confondre.
     sh = client.open(spreadsheet_title)
     ws = sh.worksheet(worksheet_name)
 
-    # Debug útil: confirma on estàs escrivint
-    print("CONNECTED SPREADSHEET TITLE:", sh.title)
-    print("CONNECTED WORKSHEET TITLE:", ws.title)
+    print("CONNECTED:", sh.title, "/", ws.title)
     print("SPREADSHEET ID:", sh.id)
 
     return ws
 
 # GOOGLE SHEETS Sincronitza les FAQs del web amb el full de càlcul aplicant control de duplicats i registre de canvis.
-def append_with_traceability(ws, faqs, font_url: str):
+def append_with_traceability(ws, faqs, font_url: str, topic: str):
 
     #1 Lectura del sheets
     values = ws.get_all_values()
@@ -71,7 +90,6 @@ def append_with_traceability(ws, faqs, font_url: str):
     idx_font = header.index("Font")
 
     #4 Creació dels conjunts per evitar duplicats
-    existing_questions = set()
     existing_pairs = set()
     question_to_row = {}  # (tema, pregunta) -> row_num (1-indexed)
     question_to_creation = {}  # (tema, pregunta) -> data_creacio_original
@@ -93,16 +111,14 @@ def append_with_traceability(ws, faqs, font_url: str):
     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     #7 Definició de valors per defecte
-    tema_default = "-"         # segons el teu cap
+    tema_default = topic         # segons el teu cap
     estat_default = "Pendent"
     persona_default = "Agent IA"
     anual_default = "-"
     last_modified_default = "" # “a mirar” → buit
     new_rows = []
     skipped_same = 0
-    skipped_question_only = 0
     added_new = 0
-    updated_changed = 0
     added_changed = 0
 
     #8 Recorregut de FAQs scrapejades
@@ -137,26 +153,42 @@ def append_with_traceability(ws, faqs, font_url: str):
     if new_rows:
         ws.append_rows(new_rows, value_input_option="RAW")
         after_rows = len(ws.get_all_values())
-        print(f"OK: afegides {len(new_rows)} files.")
-        print(f"- Noves (pregunta no existia): {added_new}")
-        print(f"- Canvis (pregunta existia, resposta diferent): {added_changed}")
-        print(f"- Saltades (mateixa pregunta i mateixa resposta): {skipped_same}")
+        print(f"- S'ha afegit {len(new_rows)} files.")
+        print(f"- Noves (pregunta diferent): {added_new}")
+        print(f"- Canvis (pregunta igual, resposta diferent): {added_changed}")
+        print(f"- Saltades (pregunta igual, resposta igual): {skipped_same}")
         print(f"FILES ABANS: {before_rows} | FILES DESPRÉS: {after_rows}")
     else:
-        print("OK: no s'ha afegit res (tot era duplicat exactament).")
-        print(f"- Saltades (mateixa pregunta i mateixa resposta): {skipped_same}")
+        print()
+        print(">>> No s'ha afegit res (tot era duplicat exactament).")
+        print(f"- Saltades: {skipped_same} (pregunta igual i resposta igual)")
         print(f"FILES ACTUALS: {before_rows}")
 
 # MAIN
 if __name__ == "__main__":
 
-    url = "https://www.upc.edu/ca/graus/faqs/preinscripcio-i-assignacio"
+    config = load_config()
 
-    faqs = scrape_faqs(url)
-    print("TOTAL FAQS SCRAPEJADES:", len(faqs))
+    CREDENTIALS_FILE = config["credentials_file"]
 
-    SPREADSHEET_TITLE = "Proves-faqs-mentors"
-    WORKSHEET_NAME = "FAQs"   # IMPORTANT: posa el nom exacte de la pestanya
+    # 1) Client google
+    client = get_gspread_client(CREDENTIALS_FILE)
 
-    ws = get_worksheet_by_title(SPREADSHEET_TITLE, WORKSHEET_NAME)
-    append_with_traceability(ws, faqs, font_url=url)
+    # 2) Llegeix sources (URL+topic) des del Sheet faqs-sources
+    SRC_TITLE = config["sources_sheet"]["spreadsheet_title"]
+    SRC_TAB = config["sources_sheet"]["worksheet_name"]
+    sources = read_sources_from_sheet(client, SRC_TITLE, SRC_TAB)
+
+    print("TOTAL FILES A PROCESSAR:", len(sources))
+
+    # 3) Obre Sheet destí (on vas guardant FAQs)
+    DEST_TITLE = config["google_sheets"]["spreadsheet_title"]
+    DEST_TAB = config["google_sheets"]["worksheet_name"]
+    dest_ws = get_worksheet_by_title(client, DEST_TITLE, DEST_TAB)
+
+    # 4) Executa per cada fila
+    for url, topic in sources:
+        print(f"\nPROCESSANT: {url} | TOPIC: {topic}")
+        faqs = scrape_faqs(url)
+        print("FAQS TROBADES:", len(faqs))
+        append_with_traceability(dest_ws, faqs, font_url=url, topic=topic)
