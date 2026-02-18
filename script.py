@@ -34,26 +34,63 @@ def get_gspread_client(credentials_file: str):
     return gspread.authorize(creds)
 
 # SCRAPING obtenir les preguntes i respostes
-def scrape_faqs(url: str):
-    r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+def scrape_faqs(url: str) -> list[tuple[str, str]]:
+    r = requests.get(
+        url,
+        timeout=25,
+        allow_redirects=True,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept-Language": "ca,en;q=0.8,es;q=0.7",
+        },
+    )
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
 
+    faqs: list[tuple[str, str]] = []
+
+    # --- Format antic UPC ---
     q_tags = soup.select('#collapse-base a[data-toggle="collapse"][href^="#collapse-"]')
-    faqs = []
+    if q_tags:
+        for q in q_tags:
+            question = q.get_text(" ", strip=True)
+            target_id = q.get("href", "").lstrip("#")
+            collapse_div = soup.find(id=target_id)
+            if not collapse_div:
+                continue
+            body = collapse_div.select_one(".panel-body") or collapse_div
+            answer = body.get_text(" ", strip=True)
+            if question and answer:
+                faqs.append((question, answer))
+        if faqs:
+            return faqs
 
-    for q in q_tags:
-        question = q.get_text(" ", strip=True)
+    # --- Format Genweb / Bootstrap 5 ---
+    # Mètode 1: per accordion-item
+    for item in soup.select(".accordion-item"):
+        q_btn = item.select_one("button.accordion-button")
+        a_body = item.select_one(".accordion-body")
+        q = q_btn.get_text(" ", strip=True) if q_btn else ""
+        a = a_body.get_text(" ", strip=True) if a_body else ""
+        if q and a:
+            faqs.append((q, a))
 
-        target_id = q.get("href", "").lstrip("#")
-        collapse_div = soup.find(id=target_id)
-        if not collapse_div:
+    if faqs:
+        return faqs
+
+    # Mètode 2: via data-bs-target
+    for btn in soup.select('button.accordion-button[data-bs-target]'):
+        q = btn.get_text(" ", strip=True)
+        target = (btn.get("data-bs-target") or "").strip()
+        if not target.startswith("#"):
             continue
-
-        body = collapse_div.select_one(".panel-body") or collapse_div
-        answer = body.get_text(" ", strip=True)
-
-        faqs.append((question, answer))
+        panel = soup.select_one(target)
+        if not panel:
+            continue
+        body = panel.select_one(".accordion-body") or panel
+        a = body.get_text(" ", strip=True)
+        if q and a:
+            faqs.append((q, a))
 
     return faqs
 
@@ -101,11 +138,13 @@ def append_with_traceability(ws, faqs, font_url: str, topic: str):
         tema = row[idx_tema].strip()
         preg = row[idx_preg].strip()
         resp = row[idx_resp].strip()
-        existing_pairs.add((preg,resp))
+        existing_pairs.add((tema, preg, resp))
         question_to_row[(tema, preg)] = i
+
         created = row[idx_data_creacio].strip() if len(row) > idx_data_creacio else ""
-        if preg not in question_to_creation and created:
-            question_to_creation[preg] = created
+        key = (tema, preg)
+        if key not in question_to_creation and created:
+            question_to_creation[key] = created
 
     #6 Generació del Timestamp
     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -189,6 +228,10 @@ if __name__ == "__main__":
     # 4) Executa per cada fila
     for url, topic in sources:
         print(f"\nPROCESSANT: {url} | TOPIC: {topic}")
-        faqs = scrape_faqs(url)
-        print("FAQS TROBADES:", len(faqs))
-        append_with_traceability(dest_ws, faqs, font_url=url, topic=topic)
+        try:
+            faqs = scrape_faqs(url)
+            print("FAQS TROBADES:", len(faqs))
+            append_with_traceability(dest_ws, faqs, font_url=url, topic=topic)
+        except Exception as e:
+            print(f"⚠️ ERROR amb {url}: {e}")
+            continue

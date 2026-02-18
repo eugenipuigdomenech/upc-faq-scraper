@@ -5,3 +5,8 @@ __pycache__/
 *.csv
 Credentials.json
 credentials.json
+token.json
+oauth_client.json
+build/
+dist/
+*.spec
