@@ -1,3 +1,4 @@
+import csv
 import os
 import sys
 import threading
@@ -68,12 +69,12 @@ class App(ctk.CTk):
         self.output_file_path = ctk.StringVar()
 
         # Output sheets
-        self.output_sheet_title = ctk.StringVar(value="UPC FAQ Export")
-        self.output_sheet_tab = ctk.StringVar(value="FAQs")
+        self.output_sheet_title = ctk.StringVar()
+        self.output_sheet_tab = ctk.StringVar()
 
         # OAuth files (Sheets)
-        self.oauth_client_json = ctk.StringVar(value="oauth_client.json")
-        self.token_file = ctk.StringVar(value="token.json")
+        self.oauth_client_json = ctk.StringVar(value="")
+        self.token_file = ctk.StringVar(value="")
 
         # ---------- Layout ----------
         self._build_header()
@@ -336,15 +337,21 @@ class App(ctk.CTk):
 
     # ================= ACTIONS =================
     def create_sample_csv(self):
-        path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")])
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv")]
+        )
         if not path:
             return
-        sample = (
-            "URL,topic\n"
-            "https://eseiaat.upc.edu/ca/proves-eugeni/prova-faqs-1,tfe\n"
-        )
-        with open(path, "w", encoding="utf-8-sig") as f:
-            f.write(sample)
+
+        with open(path, "w", encoding="utf-8-sig", newline="") as f:
+            writer = csv.writer(f, delimiter=";")
+            writer.writerow(["URL", "topic"])
+            writer.writerow([
+                "https://www.upc.edu/ca/graus/faqs/preinscripcio-i-assignacio",
+                "graus_preinscripcio"
+            ])
+
         self.sources_csv_path.set(path)
         self.println(f"✅ CSV d’exemple creat: {path}")
 

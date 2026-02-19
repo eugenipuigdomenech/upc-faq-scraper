@@ -9,7 +9,9 @@ from bs4 import BeautifulSoup
 
 import gspread
 from google.oauth2.credentials import Credentials as OAuthCredentials
+from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+
 
 
 # ---------- Constants ----------
@@ -27,20 +29,12 @@ SHEETS_COLUMNS = [
 
 OAUTH_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive",
 ]
 
 
 # ---------- OAuth (Google login) ----------
-def get_oauth_client(
-    oauth_client_json: str = "oauth_client.json",
-    token_file: str = "token.json",
-):
-    if not os.path.exists(oauth_client_json):
-        raise FileNotFoundError(
-            f"Falta '{oauth_client_json}'. Posa el fitxer OAuth Desktop al projecte."
-        )
-
+def get_oauth_client(oauth_client_json="oauth_client.json", token_file="token.json"):
     creds = None
     if os.path.exists(token_file):
         creds = OAuthCredentials.from_authorized_user_file(token_file, OAUTH_SCOPES)
@@ -51,6 +45,15 @@ def get_oauth_client(
         with open(token_file, "w", encoding="utf-8") as f:
             f.write(creds.to_json())
 
+    return gspread.authorize(creds)
+
+
+def get_client(credentials_json: str):
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = ServiceAccountCredentials.from_service_account_file(credentials_json, scopes=scopes)
     return gspread.authorize(creds)
 
 
@@ -317,18 +320,63 @@ def export_rows_to_google_sheets_oauth(
             log(m)
 
     client = get_oauth_client(oauth_client_json=oauth_client_json, token_file=token_file)
-    sh = open_sheet_by_title(client, spreadsheet_title)
-    ws = open_or_create_worksheet(sh, worksheet_name, rows=max(1000, len(rows) + 10), cols=len(SHEETS_COLUMNS))
 
+    # 1) Obrir o crear spreadsheet
+    try:
+        sh = client.open(spreadsheet_title)
+        _log(f"📄 Spreadsheet obert: {spreadsheet_title}")
+    except Exception:
+        sh = client.create(spreadsheet_title)
+        _log(f"🆕 Spreadsheet creat: {spreadsheet_title}")
+
+    # IMPORTANT: mostra ID i URL (això et garanteix que estàs mirant el correcte)
+    try:
+        _log(f"🔗 Spreadsheet URL: https://docs.google.com/spreadsheets/d/{sh.id}")
+        _log(f"🆔 Spreadsheet ID: {sh.id}")
+    except Exception:
+        pass
+
+    # 2) Obrir o crear pestanya
+    try:
+        ws = sh.worksheet(worksheet_name)
+        _log(f"📑 Pestanya oberta: {worksheet_name}")
+    except Exception:
+        ws = sh.add_worksheet(
+            title=worksheet_name,
+            rows=max(1000, len(rows) + 10),
+            cols=len(SHEETS_COLUMNS)
+        )
+        _log(f"🆕 Pestanya creada: {worksheet_name}")
+
+    # 3) Capçalera: considera buit també el cas [ [] ] o tot buid
     values = ws.get_all_values()
-    if not values:
-        ws.append_row(SHEETS_COLUMNS, value_input_option="RAW")
+    is_truly_empty = (
+        not values or
+        all((not r) or all((c or "").strip() == "" for c in r) for r in values)
+    )
 
+    if is_truly_empty:
+        ws.clear()  # deixa el full net del tot
+        ws.append_row(SHEETS_COLUMNS, value_input_option="RAW")
+        _log("🧾 Capçalera afegida")
+
+    # 4) Escriure files
     if rows:
         ws.append_rows(rows, value_input_option="RAW")
+        _log(f"✅ Rows appended: {len(rows)}")
+    else:
+        _log("ℹ️ No hi ha files per escriure (0 rows).")
 
-    _log(f"📤 Exported to Google Sheets: {spreadsheet_title} / {worksheet_name}")
-    _log(f"✅ Rows appended: {len(rows)}")
+    # 5) Verificació ràpida (per saber si realment hi ha dades al sheet)
+    try:
+        after = ws.get_all_values()
+        _log(f"🔎 Files totals al full (inclosa capçalera): {len(after)}")
+        if len(after) >= 2:
+            _log(f"🔎 Primera fila de dades: {after[1][:4]} ...")
+    except Exception:
+        pass
+
+    ws.update_acell("K1", f"LAST_WRITE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 # ---------- OUTPUT: Genweb JSON ----------
@@ -388,17 +436,61 @@ def run_pipeline(
         export_genweb_json(blocks, output_file_path)
         _log(f"🧩 Genweb JSON written: {output_file_path}")
 
+
     elif output_mode == "sheets_oauth":
+
         if not (output_sheet_title and output_sheet_tab):
             raise RuntimeError("Falta el títol o la pestanya del Google Sheet de sortida.")
-        export_rows_to_google_sheets_oauth(
-            rows=rows,
-            spreadsheet_title=output_sheet_title,
-            worksheet_name=output_sheet_tab,
-            oauth_client_json=oauth_client_json,
-            token_file=token_file,
-            log=log
-        )
+
+        try:
+
+            export_rows_to_google_sheets_oauth(
+
+                rows=rows,
+
+                spreadsheet_title=output_sheet_title,
+
+                worksheet_name=output_sheet_tab,
+
+                oauth_client_json=oauth_client_json,
+
+                token_file=token_file,
+
+                log=log
+
+            )
+
+            _log(f"📤 Exported to Google Sheets: {output_sheet_title} / {output_sheet_tab}")
+
+
+        except Exception as e:
+
+            _log(f"❌ Error exportant a Google Sheets: {type(e).__name__}: {e}")
+
+            # Intentar treure detalls si és un APIError de gspread
+
+            try:
+
+                import gspread
+
+                if isinstance(e, gspread.exceptions.APIError):
+
+                    _log(f"❌ APIError raw response: {getattr(e, 'response', None)}")
+
+                    try:
+
+                        _log(f"❌ APIError response text: {e.response.text[:1200]}")
+
+                    except Exception:
+
+                        pass
+
+            except Exception:
+
+                pass
+
+            raise
+
     else:
         raise RuntimeError("output_mode ha de ser 'csv', 'sheets_oauth' o 'genweb_json'.")
 
