@@ -1,9 +1,19 @@
 import os
+import sys
 import threading
 import time
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image
+
+import core
+
+def resource_path(relative_path: str) -> str:
+    """
+    Retorna una ruta absoluta tant si s'executa en dev com si s'executa dins PyInstaller.
+    """
+    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
+    return os.path.join(base_path, relative_path)
 
 # Opcional: icona barra de tasques Windows (només Windows)
 try:
@@ -11,7 +21,6 @@ try:
 except Exception:
     ctypes = None
 
-import core
 
 # ---------- Theme ----------
 UPC_BLUE = "#0066A1"
@@ -41,9 +50,9 @@ class App(ctk.CTk):
 
         # Taskbar icon
         try:
-            self.iconbitmap("assets/upc_logo.ico")
-        except Exception:
-            pass
+            self.iconbitmap(resource_path("assets/upc_logo.ico"))
+        except Exception as e:
+            print("No s'ha pogut carregar .ico:", e)
 
         # ---------- State ----------
         # INPUT: sempre CSV
@@ -81,16 +90,15 @@ class App(ctk.CTk):
 
         # Logo
         try:
-            logo_image = ctk.CTkImage(
-                light_image=Image.open("assets/upc_logo.png"),
-                size=(58, 58)
+            self.logo_image = ctk.CTkImage(
+                light_image=Image.open(resource_path("assets/upc_logo.png")),
+                size=(58, 58),
             )
-            ctk.CTkLabel(header, image=logo_image, text="").pack(side="left", padx=(18, 10))
-        except Exception:
-            ctk.CTkLabel(
-                header, text="UPC", text_color="white",
-                font=ctk.CTkFont(size=18, weight="bold")
-            ).pack(side="left", padx=(18, 10))
+            ctk.CTkLabel(header, image=self.logo_image, text="").pack(side="left", padx=(18, 10))
+        except Exception as e:
+            print("No s'ha pogut carregar PNG:", e)
+            ctk.CTkLabel(header, text="UPC", text_color="white",
+                         font=ctk.CTkFont(size=18, weight="bold")).pack(side="left", padx=(18, 10))
 
         ctk.CTkLabel(
             header,
@@ -118,8 +126,8 @@ class App(ctk.CTk):
         help_text = (
             "📌 Funcionament\n"
             "• Entrada: CSV (URL | topic)\n"
-            "• Procés: s’extreuen les PMF/FAQs de cada URL\n"
-            "• Sortida: CSV, Google Sheets o JSON (Genweb)"
+            "• Procés: s’extreuen les FAQs de cada URL\n"
+            "• Sortida: CSV, Google Sheets o JSON"
         )
 
         ctk.CTkLabel(
@@ -147,7 +155,7 @@ class App(ctk.CTk):
             parent=self.in_csv_row,
             row=0,
             title="Fitxer CSV d’entrada",
-            hint="• Columna 1: URL de la pàgina amb les PMF\n• Columna 2: topic/tema (identificador intern)",
+            hint="• Columna 1: URL de la pàgina amb les FAQs\n• Columna 2: topic/tema",
             var=self.sources_csv_path,
             save=False,
             types=[("CSV", "*.csv")],
