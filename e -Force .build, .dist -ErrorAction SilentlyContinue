@@ -1,0 +1,53 @@
+[33mcommit 343ca98b32944ec3fc0d4a41ebac443c3a24a9ac[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: eugeni.puigdomenech <eugeni.puigdomenech@upc.edu>
+Date:   Thu Feb 19 09:03:17 2026 +0100
+
+    app dev working v2 with executable
+
+[33mcommit 71b2cdd81589ecfc24a3faa1845031b5da34416b[m
+Author: eugeni.puigdomenech <eugeni.puigdomenech@upc.edu>
+Date:   Wed Feb 18 15:07:32 2026 +0100
+
+    app dev working
+
+[33mcommit 309b80c0c851087acd15de0ff2d60f6d3724682e[m
+Author: eugeni.puigdomenech <eugeni.puigdomenech@upc.edu>
+Date:   Mon Feb 16 14:14:16 2026 +0100
+
+    app with UI importing and exporting csv (remove oauth client secrets)
+
+[33mcommit 8cb862841036d8e7e0fb1758fb35560fead9b8ca[m
+Author: eugeni.puigdomenech <eugeni.puigdomenech@upc.edu>
+Date:   Fri Feb 13 13:25:10 2026 +0100
+
+    config and source file reading plus writing
+
+[33mcommit b59060e56723ac598a7c9e22a86f9a32375116bd[m
+Author: eugenipuigdomenech <eugeni.puigdomenech@upc.edu>
+Date:   Thu Feb 12 13:49:49 2026 +0100
+
+    adds updated new answers
+
+[33mcommit a233be5c0b70550e94ccf299be766bf046606b92[m
+Author: eugenipuigdomenech <eugeni.puigdomenech@upc.edu>
+Date:   Thu Feb 12 12:59:52 2026 +0100
+
+    Scraper updates creation date and date of update
+
+[33mcommit 3d0df7c2661a54050954d33d430215e7c35e8602[m
+Author: eugenipuigdomenech <eugeni.puigdomenech@upc.edu>
+Date:   Thu Feb 12 11:06:39 2026 +0100
+
+    Scraper updates google sheets ("proves-faqs-mentors")
+
+[33mcommit 677e13a077952f5dcee4ae0dd4154b3ed4a6c851[m
+Author: eugeni.puigdomenech <eugeni.puigdomenech@upc.edu>
+Date:   Wed Feb 11 13:49:23 2026 +0100
+
+    URLs eseiaat
+
+[33mcommit 8acfb1840eb6b787c71dccf65167ed575606d9cb[m
+Author: Eugeni Puigdomènech <eugeni.puigdomenech@PC107181.upc-ct.upc.edu>
+Date:   Wed Feb 11 12:52:35 2026 +0100
+
+    primer commit!

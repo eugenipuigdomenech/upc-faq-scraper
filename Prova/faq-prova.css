@@ -1,0 +1,47 @@
+/* S'aplica només a la teva pàgina si el wrapper existeix */
+.eseiaat-faq .accordion,
+.eseiaat-faq .accordion-item,
+.eseiaat-faq .accordion-button{
+  background: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* treu la caixa */
+.eseiaat-faq .accordion-item{
+  border: 0 !important;
+  border-bottom: 1px solid #d8d8d8 !important;
+}
+.eseiaat-faq .accordion-item:first-child{
+  border-top: 1px solid #d8d8d8 !important;
+}
+
+/* pregunta UPC-like */
+.eseiaat-faq .accordion-button{
+  padding: 1.6rem 0 !important;
+  color: #0b69b7 !important;
+  font-size: 1.85rem;
+  font-weight: 600;
+}
+.eseiaat-faq .accordion-button:not(.collapsed){
+  background: transparent !important;
+  color: #0b69b7 !important;
+}
+
+/* chevron */
+.eseiaat-faq .accordion-button::after{
+  background-image: none !important;
+  content: "⌄";
+  font-size: 1.7rem;
+  color: #0b69b7;
+}
+.eseiaat-faq .accordion-button:not(.collapsed)::after{
+  content: "⌃";
+}
+
+/* cos */
+.eseiaat-faq .accordion-body{
+  padding: 1rem 0 1.4rem 0 !important;
+  color: #555;
+  font-size: 1.1rem;
+}
