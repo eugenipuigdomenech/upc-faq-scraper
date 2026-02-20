@@ -371,8 +371,6 @@ def export_rows_to_google_sheets_oauth(
     try:
         after = ws.get_all_values()
         _log(f"🔎 Files totals al full (inclosa capçalera): {len(after)}")
-        if len(after) >= 2:
-            _log(f"🔎 Primera fila de dades: {after[1][:4]} ...")
     except Exception:
         pass
 

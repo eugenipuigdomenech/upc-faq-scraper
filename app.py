@@ -10,9 +10,7 @@ from PIL import Image
 import core
 
 def resource_path(relative_path: str) -> str:
-    """
-    Retorna una ruta absoluta tant si s'executa en dev com si s'executa dins PyInstaller.
-    """
+    """Retorna una ruta absoluta tant si s'executa en dev com si s'executa dins PyInstaller."""
     base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
     return os.path.join(base_path, relative_path)
 
