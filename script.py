@@ -33,66 +33,6 @@ def get_gspread_client(credentials_file: str):
     creds = Credentials.from_service_account_file(credentials_file, scopes=scopes)
     return gspread.authorize(creds)
 
-# SCRAPING obtenir les preguntes i respostes
-def scrape_faqs(url: str) -> list[tuple[str, str]]:
-    r = requests.get(
-        url,
-        timeout=25,
-        allow_redirects=True,
-        headers={
-            "User-Agent": "Mozilla/5.0",
-            "Accept-Language": "ca,en;q=0.8,es;q=0.7",
-        },
-    )
-    r.raise_for_status()
-    soup = BeautifulSoup(r.text, "html.parser")
-
-    faqs: list[tuple[str, str]] = []
-
-    # --- Format antic UPC ---
-    q_tags = soup.select('#collapse-base a[data-toggle="collapse"][href^="#collapse-"]')
-    if q_tags:
-        for q in q_tags:
-            question = q.get_text(" ", strip=True)
-            target_id = q.get("href", "").lstrip("#")
-            collapse_div = soup.find(id=target_id)
-            if not collapse_div:
-                continue
-            body = collapse_div.select_one(".panel-body") or collapse_div
-            answer = body.get_text(" ", strip=True)
-            if question and answer:
-                faqs.append((question, answer))
-        if faqs:
-            return faqs
-
-    # --- Format Genweb / Bootstrap 5 ---
-    # Mètode 1: per accordion-item
-    for item in soup.select(".accordion-item"):
-        q_btn = item.select_one("button.accordion-button")
-        a_body = item.select_one(".accordion-body")
-        q = q_btn.get_text(" ", strip=True) if q_btn else ""
-        a = a_body.get_text(" ", strip=True) if a_body else ""
-        if q and a:
-            faqs.append((q, a))
-
-    if faqs:
-        return faqs
-
-    # Mètode 2: via data-bs-target
-    for btn in soup.select('button.accordion-button[data-bs-target]'):
-        q = btn.get_text(" ", strip=True)
-        target = (btn.get("data-bs-target") or "").strip()
-        if not target.startswith("#"):
-            continue
-        panel = soup.select_one(target)
-        if not panel:
-            continue
-        body = panel.select_one(".accordion-body") or panel
-        a = body.get_text(" ", strip=True)
-        if q and a:
-            faqs.append((q, a))
-
-    return faqs
 
 # GOOGLE SHEETS obtenir la pàgina de Google Sheets on anirà
 def get_worksheet_by_title(client, spreadsheet_title: str, worksheet_name: str):

@@ -134,9 +134,10 @@ def read_sources_csv(path: str) -> List[Tuple[str, str]]:
 # ---------- SCRAPE ----------
 def scrape_faqs(url: str, log=None, debug: bool = False) -> List[Tuple[str, str]]:
     """
-    Suporta dos formats:
+    Suporta:
     1) UPC antic (collapse-base / data-toggle="collapse")
-    2) Genweb/Bootstrap 5 accordion (accordion-item / data-bs-target)
+    2) Bootstrap 5 accordion clàssic (accordion-item / accordion-body)
+    3) Nou format UPC/Plone amb #faqAccordion (button[data-bs-target="#cX"] + div.collapse#cX)
     """
     def _log(m: str):
         if log:
@@ -160,7 +161,9 @@ def scrape_faqs(url: str, log=None, debug: bool = False) -> List[Tuple[str, str]
 
     faqs: List[Tuple[str, str]] = []
 
-    # --- Format 1: UPC antic ---
+    # ---------------------------------------------------------------------
+    # Format 1: UPC antic
+    # ---------------------------------------------------------------------
     q_tags = soup.select('#collapse-base a[data-toggle="collapse"][href^="#collapse-"]')
     if q_tags:
         for q in q_tags:
@@ -177,8 +180,52 @@ def scrape_faqs(url: str, log=None, debug: bool = False) -> List[Tuple[str, str]
         if faqs:
             return faqs
 
-    # --- Format 2: Bootstrap 5 accordion ---
-    # Mètode 2.1: per cada accordion-item
+    # ---------------------------------------------------------------------
+    # Format 3: Nou format amb #faqAccordion i div.collapse id="cX"
+    # (el provem ABANS del Bootstrap 5 clàssic perquè és més específic)
+    # ---------------------------------------------------------------------
+    root = soup.select_one("#faqAccordion")
+    if root:
+        btns = root.select('button[data-bs-toggle="collapse"][data-bs-target^="#"]')
+        if debug:
+            _log(f"DEBUG #faqAccordion buttons: {len(btns)}")
+
+        for btn in btns:
+            # Pregunta: text del botó SENSE la icona (span)
+            btn_copy = BeautifulSoup(str(btn), "html.parser").select_one("button")
+            if btn_copy:
+                for s in btn_copy.select("span"):
+                    s.decompose()
+                question = btn_copy.get_text(" ", strip=True)
+            else:
+                question = btn.get_text(" ", strip=True)
+
+            target = (btn.get("data-bs-target") or "").strip()
+            if not target.startswith("#"):
+                continue
+
+            panel = root.select_one(target) or soup.select_one(target)
+            if not panel:
+                continue
+
+            # Resposta: normalment hi ha un <p>, però fem-ho robust:
+            #  - si hi ha p, concatena'ls
+            #  - si no, text del panell
+            ps = panel.select("p")
+            if ps:
+                answer = " ".join(p.get_text(" ", strip=True) for p in ps if p.get_text(strip=True))
+            else:
+                answer = panel.get_text(" ", strip=True)
+
+            if question and answer:
+                faqs.append((question, answer))
+
+        if faqs:
+            return faqs
+
+    # ---------------------------------------------------------------------
+    # Format 2: Bootstrap 5 accordion clàssic (accordion-item / accordion-body)
+    # ---------------------------------------------------------------------
     items = soup.select(".accordion-item")
     if debug:
         _log(f"DEBUG accordion-item: {len(items)}")
@@ -307,17 +354,36 @@ def export_like_sheets_csv(rows: List[List[str]], output_path: str):
 
 
 # ---------- OUTPUT: Sheets (OAuth) ----------
+# ---------- OUTPUT: Sheets (OAuth) ----------
 def export_rows_to_google_sheets_oauth(
     rows: List[List[str]],
     spreadsheet_title: str,
     worksheet_name: str,
     oauth_client_json: str = "oauth_client.json",
     token_file: str = "token.json",
-    log=None
+    log=None,
 ):
+    import re
+    from datetime import datetime
+
     def _log(m: str):
         if log:
             log(m)
+
+    def _norm(s: str) -> str:
+        s = (s or "").replace("\u00a0", " ")
+        return re.sub(r"\s+", " ", s).strip()
+
+    def _qkey(row: List[str]) -> tuple[str, str, str]:
+        # "mateixa pregunta" = Tema + Pregunta + Font
+        topic = _norm(row[0]) if len(row) > 0 else ""
+        pregunta = _norm(row[1]) if len(row) > 1 else ""
+        font = _norm(row[8]) if len(row) > 8 else ""
+        return (topic, pregunta, font)
+
+    def _ans(row: List[str]) -> str:
+        # Resposta normalitzada
+        return _norm(row[2]) if len(row) > 2 else ""
 
     client = get_oauth_client(oauth_client_json=oauth_client_json, token_file=token_file)
 
@@ -329,13 +395,6 @@ def export_rows_to_google_sheets_oauth(
         sh = client.create(spreadsheet_title)
         _log(f"🆕 Spreadsheet creat: {spreadsheet_title}")
 
-    # IMPORTANT: mostra ID i URL (això et garanteix que estàs mirant el correcte)
-    try:
-        _log(f"🔗 Spreadsheet URL: https://docs.google.com/spreadsheets/d/{sh.id}")
-        _log(f"🆔 Spreadsheet ID: {sh.id}")
-    except Exception:
-        pass
-
     # 2) Obrir o crear pestanya
     try:
         ws = sh.worksheet(worksheet_name)
@@ -344,39 +403,77 @@ def export_rows_to_google_sheets_oauth(
         ws = sh.add_worksheet(
             title=worksheet_name,
             rows=max(1000, len(rows) + 10),
-            cols=len(SHEETS_COLUMNS)
+            cols=len(SHEETS_COLUMNS),
         )
         _log(f"🆕 Pestanya creada: {worksheet_name}")
 
-    # 3) Capçalera: considera buit també el cas [ [] ] o tot buid
+    # 3) Assegurar capçalera
     values = ws.get_all_values()
     is_truly_empty = (
-        not values or
-        all((not r) or all((c or "").strip() == "" for c in r) for r in values)
+        not values
+        or all((not r) or all((c or "").strip() == "" for c in r) for r in values)
     )
-
     if is_truly_empty:
-        ws.clear()  # deixa el full net del tot
+        ws.clear()
         ws.append_row(SHEETS_COLUMNS, value_input_option="RAW")
         _log("🧾 Capçalera afegida")
+        values = [SHEETS_COLUMNS]
 
-    # 4) Escriure files
-    if rows:
-        ws.append_rows(rows, value_input_option="RAW")
-        _log(f"✅ Rows appended: {len(rows)}")
+    # 4) Carregar info existent:
+    #    - first_created: data creació del primer cop per pregunta
+    #    - existing_answers: conjunt de respostes ja vistes per pregunta (per evitar duplicar mateixa resposta)
+    first_created: dict[tuple[str, str, str], str] = {}
+    existing_answers: dict[tuple[str, str, str], set[str]] = {}
+
+    for r in values[1:]:
+        k = _qkey(r)
+
+        created = (r[4] if len(r) > 4 else "").strip()  # col E
+        if created and k not in first_created:
+            first_created[k] = created
+
+        a = _ans(r)
+        if a:
+            existing_answers.setdefault(k, set()).add(a)
+
+    # 5) Construir files a afegir:
+    #    - hereta data creació
+    #    - afegeix només si la resposta és nova per aquella pregunta
+    now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    to_append: List[List[str]] = []
+    skipped = 0
+
+    for r in rows:
+        rr = r.copy()
+        k = _qkey(rr)
+        a = _ans(rr)
+
+        # Data creació (E): hereta o posa ara si és la primera vegada
+        rr[4] = first_created.get(k, rr[4] or now_ts)
+
+        # Darrera modificació (F): sempre ara (per la fila que afegirem)
+        rr[5] = now_ts
+
+        seen = existing_answers.setdefault(k, set())
+        if a in seen:
+            skipped += 1
+            continue  # mateixa pregunta + mateixa resposta => no afegeix
+
+        # resposta nova => afegeix i marca com vista (també evita duplicats dins del mateix run)
+        seen.add(a)
+        first_created.setdefault(k, rr[4])
+        to_append.append(rr)
+
+    _log(f"🧹 Saltades (mateixa resposta): {skipped} | ➕ Noves (resposta diferent): {len(to_append)}")
+
+    # 6) Escriure només les que toquen
+    if to_append:
+        ws.append_rows(to_append, value_input_option="RAW")
+        _log(f"✅ Rows appended: {len(to_append)} (només quan canvia la resposta)")
     else:
-        _log("ℹ️ No hi ha files per escriure (0 rows).")
+        _log("ℹ️ No s’ha afegit res (tot eren duplicats de resposta).")
 
-    # 5) Verificació ràpida (per saber si realment hi ha dades al sheet)
-    try:
-        after = ws.get_all_values()
-        _log(f"🔎 Files totals al full (inclosa capçalera): {len(after)}")
-    except Exception:
-        pass
-
-    ws.update_acell("K1", f"LAST_WRITE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-
-
+    ws.update_acell("K1", f"LAST_WRITE: {now_ts}")
 # ---------- OUTPUT: Genweb JSON ----------
 def export_genweb_json(blocks: List[Dict[str, Any]], output_path: str):
     with open(output_path, "w", encoding="utf-8") as f:
