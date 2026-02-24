@@ -219,6 +219,39 @@ def scrape_faqs(url: str, log=None, debug: bool = False) -> List[Tuple[str, str]
     if faqs:
         return faqs
 
+
+    # Format 4: Genweb GW4 (accordion accordion-gw4)
+
+    gw4 = soup.select("div.accordion.accordion-gw4")
+    if debug:
+        _log(f"DEBUG accordion-gw4 blocks: {len(gw4)}")
+
+    if gw4:
+        for block in gw4:
+            # Cada item acostuma a estar dins d'un div (fill directe)
+            items = block.select(":scope > div")
+            if not items:
+                # fallback per si el HTML ve una mica diferent
+                items = block.select("div")
+
+            for it in items:
+                q_a = it.select_one('a[id^="open-accordion"]')
+                content = it.select_one("div.accordion-content")
+
+                if not q_a or not content:
+                    continue
+
+                question = q_a.get_text(" ", strip=True)
+
+                # Resposta: pot tenir molts <p>, <br>, <strong>...
+                # get_text(" ", ...) preserva text llegible
+                answer = content.get_text(" ", strip=True)
+
+                if question and answer:
+                    faqs.append((question, answer))
+
+        if faqs:
+            return faqs
     # Mètode extra: buttons data-bs-target
     btns = soup.select('button.accordion-button[data-bs-target]')
     if debug:
@@ -745,9 +778,13 @@ def run_approved_to_html_pipeline(
     approved.sort(key=lambda r: ((r.get("Tema") or "").lower(), (r.get("Pregunta") or "").lower()))
 
     html_text = render_upc_faqaccordion(approved)
-    export_text(output_path, html_text)
 
     topics = len({(r.get('Tema') or '').strip() for r in approved if (r.get('Tema') or '').strip()})
     _log(f"Fitxer generat: {output_path}")
 
-    return {"total_rows": len(rows), "approved_rows": len(approved), "topics": topics}
+    return {
+        "total_rows": len(rows),
+        "approved_rows": len(approved),
+        "topics": topics,
+        "html_text": html_text,
+    }

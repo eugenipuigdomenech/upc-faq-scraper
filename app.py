@@ -6,6 +6,25 @@ from PIL import Image
 
 TOPICS_UI = ["TFE", "Mobilitat", "Empresa", "Acte de graduació", "graus", "masters"]
 
+OAUTH_HELP_TEXT = (
+        "Com aconseguir oauth_client.json (Google OAuth):\n\n"
+        "1) Ves a Google Cloud Console.\n"
+        "2) Crea un Projecte (o usa’n un existent).\n"
+        "3) APIs & Services → Library:\n"
+        "   - Habilita Google Sheets API\n"
+        "   - Habilita Google Drive API\n"
+        "4) APIs & Services → OAuth consent screen:\n"
+        "   - Tipus: External (normalment)\n"
+        "   - Omple dades bàsiques\n"
+        "   - Afegeix el teu usuari com a Test user (si està en mode Testing)\n"
+        "5) APIs & Services → Credentials → Create credentials → OAuth client ID:\n"
+        "   - Application type: Desktop app\n"
+        "6) Descarrega el JSON i guarda’l com: oauth_client.json\n\n"
+        "Notes:\n"
+        "- La primera vegada que executis, s’obrirà el navegador per autoritzar.\n"
+        "- Es crearà un fitxer token.json al costat del programa (no el perdis)."
+    )
+
 def resource_path(relative_path: str) -> str:
     """Retorna una ruta absoluta tant si s'executa en dev com si s'executa dins PyInstaller."""
     base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
@@ -26,8 +45,74 @@ TEXT_MUTED = "#4B5563"
 
 ctk.set_appearance_mode("light")
 
+# --- Tooltip helper (works with/without CTkToolTip) ---
+try:
+    # En algunes versions existeix així
+    from customtkinter import CTkToolTip  # type: ignore
+except Exception:
+    CTkToolTip = None
+
+
+class _HoverTooltip:
+    """Fallback tooltip si no tens CTkToolTip."""
+    def __init__(self, widget, text: str, wraplength: int = 420):
+        self.widget = widget
+        self.text = text
+        self.wraplength = wraplength
+        self.tip = None
+
+        widget.bind("<Enter>", self._show, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+
+    def _show(self, _=None):
+        if self.tip or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 18
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+
+        import tkinter as tk
+        self.tip = tk.Toplevel(self.widget)
+        self.tip.wm_overrideredirect(True)
+        self.tip.wm_geometry(f"+{x}+{y}")
+        self.tip.attributes("-topmost", True)
+
+        lbl = tk.Label(
+            self.tip,
+            text=self.text,
+            justify="left",
+            wraplength=self.wraplength,
+            background="#111827",
+            foreground="white",
+            padx=10,
+            pady=8,
+            relief="solid",
+            borderwidth=1,
+        )
+        lbl.pack()
+
+    def _hide(self, _=None):
+        if self.tip:
+            self.tip.destroy()
+            self.tip = None
+
+def attach_tooltip(widget, text: str):
+    """Adjunta tooltip al widget (CTkToolTip si hi és; si no fallback)."""
+    if not text:
+        return
+    if CTkToolTip:
+        try:
+            CTkToolTip(widget, message=text)  # segons versions: message= o text=
+            return
+        except Exception:
+            try:
+                CTkToolTip(widget, text=text)
+                return
+            except Exception:
+                pass
+    _HoverTooltip(widget, text=text)
 
 class App(ctk.CTk):
+
     def __init__(self):
         super().__init__()
 
@@ -78,6 +163,7 @@ class App(ctk.CTk):
         self.println("Quan hagis seleccionat la ruta d’entrada i sortida, prem «Executa».")
 
     # ================= UI BUILD =================
+
     def _build_header(self):
         header = ctk.CTkFrame(self, fg_color=UPC_BLUE, corner_radius=0, height=92)
         header.pack(fill="x")
@@ -109,6 +195,11 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=22, weight="bold"),
         ).pack(side="right", padx=18)
 
+    def _show_generated_code(self, code: str):
+        self.log2.delete("1.0", "end")
+        self.log2.insert("1.0", code)
+        self.log2.see("1.0")
+
     def _build_body(self):
         body = ctk.CTkScrollableFrame(self, fg_color=BG)
         body.pack(fill="both", expand=True, padx=18, pady=18)
@@ -119,23 +210,30 @@ class App(ctk.CTk):
         help_box.grid(row=0, column=0, sticky="ew", padx=6, pady=(0, 10))
 
         help_text = (
-            "📌 Funcionament\n"
-            "• Utilitat 1: Scrape → exporta CSV o Google Sheets\n"
-            "• Utilitat 2: Importa CSV/Sheets editat → filtra Estat=Aprobat → genera HTML"
+            "   Aquesta eina té dues utilitats:\n\n"
+            "1) Descarregar FAQs\n"
+            "   Introdueixes una o més pàgines web i el programa descarrega\n"
+            "   les preguntes i respostes.\n"
+            "   Les desa en CSV o Google Sheets per poder-les revisar i marcar\n"
+            "   com “Aprovat” o “Pendent”.\n\n"
+            "2) Convertir FAQs aprovades\n"
+            "   Importa el CSV o Google Sheets ja revisat i genera el codi HTML\n"
+            "   preparat per enganxar directament a la pàgina Genweb de l’ESEIAAT."
         )
         ctk.CTkLabel(
             help_box,
             text=help_text,
             justify="left",
             font=ctk.CTkFont(size=12),
+            wraplength=980
         ).pack(anchor="w", padx=12, pady=10)
 
         # Tabs
         tabs = ctk.CTkTabview(body)
         tabs.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 10))
 
-        tab_scrape = tabs.add("1) Scrape i exporta")
-        tab_html = tabs.add("2) Aprovats → HTML")
+        tab_scrape = tabs.add("1) Descarregar FAQs per revisar")
+        tab_html = tabs.add("2) Convertir FAQs aprovades a codi (Genweb)")
 
         tab_scrape.grid_columnconfigure(0, weight=1)
         tab_html.grid_columnconfigure(0, weight=1)
@@ -150,23 +248,13 @@ class App(ctk.CTk):
         self.in_card.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
-            self.in_card, text="ENTRADA",
+            self.in_card, text="Introdueix la URL de la pàgina d’on extreure les FAQs",
             font=ctk.CTkFont(size=14, weight="bold")
         ).grid(row=0, column=0, padx=12, pady=(10, 6), sticky="w")
 
         self.in_sources_row = ctk.CTkFrame(self.in_card, fg_color="transparent")
         self.in_sources_row.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 10))
         self.in_sources_row.grid_columnconfigure(0, weight=1)
-
-        hint = ctk.CTkLabel(
-            self.in_sources_row,
-            text="Afegeix una o més URLs i assigna un tema a cada una.",
-            font=ctk.CTkFont(size=12),
-            text_color=TEXT_MUTED,
-            justify="left",
-        )
-        hint.grid(row=0, column=0, sticky="w", padx=6, pady=(0, 6))
-
         self.sources_list = ctk.CTkFrame(self.in_sources_row, fg_color="transparent")
         self.sources_list.grid(row=1, column=0, sticky="ew", padx=0, pady=0)
         self.sources_list.grid_columnconfigure(0, weight=1)
@@ -184,7 +272,7 @@ class App(ctk.CTk):
         self.out_card.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
-            self.out_card, text="SORTIDA",
+            self.out_card, text="On vols desar el fitxer per revisar",
             font=ctk.CTkFont(size=14, weight="bold")
         ).grid(row=0, column=0, columnspan=3, padx=12, pady=(10, 6), sticky="w")
 
@@ -237,6 +325,7 @@ class App(ctk.CTk):
             save=False,
             types=[("JSON", "*.json")],
             button_text="Explora…",
+            tooltip_text=OAUTH_HELP_TEXT,
         )
 
         # --- Botó + progress + log (tab 1) ---
@@ -269,7 +358,7 @@ class App(ctk.CTk):
         card2.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
-            card2, text="IMPORTA I GENERA HTML (només Estat = Aprobat)",
+            card2, text="Selecciona el fitxer revisat (agafarà només les faqs aprovades)",
             font=ctk.CTkFont(size=14, weight="bold")
         ).grid(row=0, column=0, columnspan=3, padx=12, pady=(10, 6), sticky="w")
 
@@ -321,31 +410,13 @@ class App(ctk.CTk):
             save=False,
             types=[("JSON", "*.json")],
             button_text="Explora…",
-        )
-
-        out2 = ctk.CTkFrame(tab_html, fg_color=LIGHT_PANEL, corner_radius=10)
-        out2.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 10))
-        out2.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(
-            out2, text="SORTIDA",
-            font=ctk.CTkFont(size=14, weight="bold")
-        ).grid(row=0, column=0, columnspan=3, padx=12, pady=(10, 6), sticky="w")
-
-        self._file_row(
-            parent=out2,
-            row=1,
-            label="Fitxer HTML/TXT de sortida",
-            var=self.html_output_path,
-            save=True,
-            types=[("HTML", "*.html"), ("TXT", "*.txt")],
-            button_text="Desa…",
+            tooltip_text=OAUTH_HELP_TEXT,
         )
 
         btns2 = ctk.CTkFrame(tab_html, fg_color="transparent")
         btns2.grid(row=2, column=0, sticky="w", padx=6, pady=(4, 6))
 
-        self.gen_btn = ctk.CTkButton(btns2, text="Genera HTML", command=self.generate_html_clicked, width=160)
+        self.gen_btn = ctk.CTkButton(btns2, text="Generar codi font per Genweb", command=self.generate_html_clicked, width=160)
         self.gen_btn.pack(side="left")
 
         self.log2 = ctk.CTkTextbox(tab_html, height=260)
@@ -354,7 +425,6 @@ class App(ctk.CTk):
         # Refresh inicials (important)
         self._refresh_ui()
         self._refresh_html_ui()
-
 
     def log2_println(self, msg):
         self.log2.insert("end", msg + "\n")
@@ -381,12 +451,6 @@ class App(ctk.CTk):
             if not os.path.exists(oauth_file):
                 return False, f"Falta el fitxer OAuth: {oauth_file}"
 
-        out = self.html_output_path.get().strip()
-        if not out:
-            return False, "Selecciona un fitxer de sortida (.html o .txt)."
-        if not (out.lower().endswith(".html") or out.lower().endswith(".txt")):
-            return False, "La sortida ha d’acabar en .html o .txt"
-
         return True, ""
 
     def generate_html_clicked(self):
@@ -411,13 +475,12 @@ class App(ctk.CTk):
                 sheet_tab=self.html_sheet_tab.get().strip() if mode == "sheets_oauth" else None,
                 oauth_client_json=self.oauth_client_json.get().strip() or "oauth_client.json",
                 token_file=self.token_file.get().strip() or "token.json",
-                output_path=self.html_output_path.get().strip(),
                 log=self.ui_log2,
             )
-            self.ui_log2(
-                f"\n✅ Fet! Files llegides: {stats.get('total_rows', 0)} | "
-                f"Aprovades: {stats.get('approved_rows', 0)} | Temes: {stats.get('topics', 0)}"
-            )
+
+            html_code = stats.get("html_text", "")
+            self.after(0, lambda: self._show_generated_code(html_code))
+
         except Exception as e:
             msg = str(e)
             self.ui_log2(f"❌ Error: {msg}")
@@ -435,12 +498,21 @@ class App(ctk.CTk):
 
         url_var = ctk.StringVar(value=url_value)
         topic_var = ctk.StringVar(value=topic_value if topic_value in TOPICS_UI else TOPICS_UI[0])
+        topic_custom_var = ctk.StringVar(value="")
 
         url_entry = ctk.CTkEntry(row_frame, textvariable=url_var, placeholder_text="https://...")
         url_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
-        topic_menu = ctk.CTkOptionMenu(row_frame, values=TOPICS_UI, variable=topic_var, width=190)
+        topic_menu = ctk.CTkOptionMenu(row_frame, values=TOPICS_UI, variable=topic_var, width=150)
         topic_menu.grid(row=0, column=1, sticky="e", padx=(0, 8))
+
+        topic_custom_entry = ctk.CTkEntry(
+            row_frame,
+            textvariable=topic_custom_var,
+            placeholder_text="Tema (custom)...",
+            width=220
+        )
+        topic_custom_entry.grid(row=0, column=2, sticky="e", padx=(0, 8))
 
         del_btn = ctk.CTkButton(
             row_frame,
@@ -448,12 +520,13 @@ class App(ctk.CTk):
             width=44,
             command=lambda: self.remove_source_row(row_frame)
         )
-        del_btn.grid(row=0, column=2, sticky="e")
+        del_btn.grid(row=0, column=3, sticky="e")
 
         self.source_rows.append({
             "frame": row_frame,
             "url_var": url_var,
             "topic_var": topic_var,
+            "topic_custom_var": topic_custom_var,
         })
 
     def remove_source_row(self, frame):
@@ -462,8 +535,31 @@ class App(ctk.CTk):
         # Elimina de estado
         self.source_rows = [r for r in self.source_rows if r["frame"] != frame]
 
-    def _file_row(self, parent, row, label, var, save, types, button_text="Navega…"):
-        ctk.CTkLabel(parent, text=label).grid(row=row, column=0, padx=6, pady=10, sticky="w")
+    def _file_row(self, parent, row, label, var, save, types, button_text="Navega…", tooltip_text: str = ""):
+        # Columna 0: label + (?) tooltip
+        left = ctk.CTkFrame(parent, fg_color="transparent")
+        left.grid(row=row, column=0, padx=6, pady=10, sticky="w")
+
+        ctk.CTkLabel(left, text=label).pack(side="left")
+
+        if tooltip_text:
+            info = ctk.CTkButton(
+                left,
+                text="?",
+                width=26,
+                height=26,
+                fg_color="transparent",
+                hover_color="#E5E7EB",
+                text_color=TEXT_MUTED,
+                corner_radius=13,
+                border_width=1,
+                border_color="#D1D5DB",
+                command=lambda: None,
+            )
+            info.pack(side="left", padx=(8, 0))
+            attach_tooltip(info, tooltip_text)
+
+        # entry i botó com abans
         ctk.CTkEntry(parent, textvariable=var).grid(row=row, column=1, padx=6, pady=10, sticky="ew")
 
         def browse():
@@ -655,14 +751,18 @@ class App(ctk.CTk):
     def get_sources_from_ui(self):
         out = []
         for r in self.source_rows:
+
             url = (r["url_var"].get() or "").strip()
-            topic = (r["topic_var"].get() or "").strip()
+            topic_custom = (r.get("topic_custom_var").get() or "").strip()
+            topic_dropdown = (r.get("topic_var").get() or "").strip()
+            topic = topic_custom if topic_custom else topic_dropdown
+
             if not url:
                 continue
             # validación básica de URL
             if not (url.startswith("http://") or url.startswith("https://")):
                 continue
-            if topic not in TOPICS_UI:
+            if not topic:
                 topic = TOPICS_UI[0]
             out.append((url, topic))
         return out
