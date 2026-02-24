@@ -1,12 +1,11 @@
+# IMPORTS
 import os,sys,threading,time,core
-
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image
 
-
+# CONSTANTS DE CONFIGURACIÓ
 TOPICS_UI = ["Graus", "Masters", "TFE", "Mobilitat", "Empresa", "Acte de graduació"]
-
 OAUTH_HELP_TEXT = (
         "Com aconseguir oauth_client.json (Google OAuth):\n\n"
         "1) Ves a Google Cloud Console.\n"
@@ -25,7 +24,6 @@ OAUTH_HELP_TEXT = (
         "- La primera vegada que executis, s’obrirà el navegador per autoritzar.\n"
         "- Es crearà un fitxer token.json al costat del programa (no el perdis)."
     )
-
 FAQ_FORMAT_HELP_TEXT = (
     "Quines pàgines puc extreure?\n\n"
     "Aquest programa detecta automàticament aquests formats de FAQs:\n"
@@ -36,27 +34,25 @@ FAQ_FORMAT_HELP_TEXT = (
     "Si una pàgina té un format diferent, pot donar 0 resultats.\n"
     "En aquest cas cal afegir un selector nou al scraper."
 )
+    # Theme
+UPC_BLUE = "#0066A1"
+BG = "#FFFFFF"
+LIGHT_PANEL = "#F3F4F6"
+TEXT_MUTED = "#4B5563"
+ctk.set_appearance_mode("light")
 
+# HELPERS
 def resource_path(relative_path: str) -> str:
     """Retorna una ruta absoluta tant si s'executa en dev com si s'executa dins PyInstaller."""
     base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
     return os.path.join(base_path, relative_path)
-
-# Opcional: icona barra de tasques Windows (només Windows)
+    # Windows taskbar icon (optional)
 try:
     import ctypes
 except Exception:
     ctypes = None
 
-
-# ---------- Theme ----------
-UPC_BLUE = "#0066A1"
-BG = "#FFFFFF"
-LIGHT_PANEL = "#F3F4F6"
-TEXT_MUTED = "#4B5563"
-
-ctk.set_appearance_mode("light")
-
+# COMPONENTS UI
 class ToolTip:
     def __init__(self, widget, text):
         self.widget = widget
@@ -96,8 +92,10 @@ class ToolTip:
             self.tip_window.destroy()
             self.tip_window = None
 
+# CLASSE PRINCIPAL
 class App(ctk.CTk):
 
+    # ====Lifecycle / init
     def __init__(self):
         super().__init__()
 
@@ -153,8 +151,7 @@ class App(ctk.CTk):
             "aprovades i obté el codi font llest per enganxar a la web."
         )
 
-    # ================= UI BUILD =================
-
+    # ====Build UI
     def _build_header(self):
         header = ctk.CTkFrame(self, fg_color=UPC_BLUE, corner_radius=0, height=92)
         header.pack(fill="x")
@@ -185,28 +182,6 @@ class App(ctk.CTk):
             text_color="white",
             font=ctk.CTkFont(size=22, weight="bold"),
         ).pack(side="right", padx=18)
-
-    def _help_icon(self, parent, text):
-        icon = ctk.CTkLabel(
-            parent,
-            text="?",
-            width=18,
-            height=18,
-            corner_radius=9,
-            fg_color=UPC_BLUE,
-            text_color="white",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            anchor="center",
-            cursor="hand2"
-        )
-        ToolTip(icon, text)
-        return icon
-
-    def _show_generated_code(self, code: str):
-        self.log2.delete("1.0", "end")
-        self.log2.insert("1.0", code)
-        self.log2.see("1.0")
-
     def _build_body(self):
         body = ctk.CTkScrollableFrame(self, fg_color=BG)
         body.pack(fill="both", expand=True, padx=18, pady=18)
@@ -435,70 +410,7 @@ class App(ctk.CTk):
         self._refresh_ui()
         self._refresh_html_ui()
 
-    def log2_println(self, msg):
-        self.log2.insert("end", msg + "\n")
-        self.log2.see("end")
-
-    def ui_log2(self, msg: str):
-        self.after(0, lambda: self.log2_println(msg))
-
-    def validate_html_inputs(self):
-        mode = self.html_input_mode.get()
-
-        if mode == "csv":
-            path = self.html_input_csv_path.get().strip()
-            if not path:
-                return False, "Selecciona el CSV d’entrada."
-            if not os.path.exists(path):
-                return False, "El CSV d’entrada no existeix."
-        else:
-            if not self.html_sheet_title.get().strip():
-                return False, "Omple el títol del Google Sheet."
-            if not self.html_sheet_tab.get().strip():
-                return False, "Omple el nom de la pestanya."
-            oauth_file = self.oauth_client_json.get().strip() or "oauth_client.json"
-            if not os.path.exists(oauth_file):
-                return False, f"Falta el fitxer OAuth: {oauth_file}"
-
-        return True, ""
-
-    def generate_html_clicked(self):
-        ok, err = self.validate_html_inputs()
-        if not ok:
-            messagebox.showerror("Error", err)
-            return
-
-        self.gen_btn.configure(state="disabled")
-        self.ui_log2("\n▶ Generant HTML d’aprovats…")
-
-        t = threading.Thread(target=self._generate_html_background, daemon=True)
-        t.start()
-
-    def _generate_html_background(self):
-        try:
-            mode = self.html_input_mode.get()
-            stats = core.run_approved_to_html_pipeline(
-                input_mode=mode,
-                input_csv_path=self.html_input_csv_path.get().strip() if mode == "csv" else None,
-                sheet_title=self.html_sheet_title.get().strip() if mode == "sheets_oauth" else None,
-                sheet_tab=self.html_sheet_tab.get().strip() if mode == "sheets_oauth" else None,
-                oauth_client_json=self.oauth_client_json.get().strip() or "oauth_client.json",
-                token_file=self.token_file.get().strip() or "token.json",
-                log=self.ui_log2,
-            )
-
-            html_code = stats.get("html_text", "")
-            self.after(0, lambda: self._show_generated_code(html_code))
-
-        except Exception as e:
-            msg = str(e)
-            self.ui_log2(f"❌ Error: {msg}")
-            self.after(0, lambda: messagebox.showerror("Error", msg))
-        finally:
-            self.after(0, lambda: self.gen_btn.configure(state="normal"))
-
-    # ================= UI HELPERS =================
-
+    # ====UI component helpers
     def add_source_row(self, url_value: str = "", topic_value: str = "TFE", custom_topic_value: str = ""):
         row_frame = ctk.CTkFrame(self.sources_list, fg_color="transparent")
         row_frame.pack(fill="x", padx=6, pady=6)
@@ -541,13 +453,26 @@ class App(ctk.CTk):
             "topic_var": topic_var,
             "custom_topic_var": custom_topic_var,
         })
-
     def remove_source_row(self, frame):
         # Elimina de UI
         frame.destroy()
         # Elimina de estado
         self.source_rows = [r for r in self.source_rows if r["frame"] != frame]
-
+    def _help_icon(self, parent, text):
+        icon = ctk.CTkLabel(
+            parent,
+            text="?",
+            width=18,
+            height=18,
+            corner_radius=9,
+            fg_color=UPC_BLUE,
+            text_color="white",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            anchor="center",
+            cursor="hand2"
+        )
+        ToolTip(icon, text)
+        return icon
     def _file_row(self, parent, row, label, var, save, types, button_text="Navega…", tooltip_text: str | None = None):
         # --- Columna 0: label + (opcional) icona "?"
         label_frame = ctk.CTkFrame(parent, fg_color="transparent")
@@ -577,7 +502,6 @@ class App(ctk.CTk):
         ctk.CTkButton(parent, text=button_text, width=110, command=browse).grid(
             row=row, column=2, padx=6, pady=10
         )
-
     def _file_row_with_hint(self, parent, row, title, hint, var, save, types):
         # Columna 0: títol + hint
         left = ctk.CTkFrame(parent, fg_color="transparent")
@@ -607,22 +531,28 @@ class App(ctk.CTk):
         ctk.CTkButton(parent, text="Explora…", width=110, command=browse).grid(
             row=row, column=2, padx=6, pady=10, sticky="ne"
         )
-
     def _text_row(self, parent, row, label, var):
         ctk.CTkLabel(parent, text=label).grid(row=row, column=0, padx=10, pady=6, sticky="w")
         ctk.CTkEntry(parent, textvariable=var).grid(row=row, column=1, padx=6, pady=6, sticky="ew")
         ctk.CTkLabel(parent, text="").grid(row=row, column=2, padx=6, pady=6)  # spacer
 
+    # ====UI Logging / output
     def println(self, msg):
         self.log.insert("end", msg + "\n")
         self.log.see("end")
-
+    def log2_println(self, msg):
+        self.log2.insert("end", msg + "\n")
+        self.log2.see("end")
+    def ui_log2(self, msg: str):
+        self.after(0, lambda: self.log2_println(msg))
     def ui_log(self, msg: str):
         self.after(0, lambda: self.println(msg))
+    def _show_generated_code(self, code: str):
+        self.log2.delete("1.0", "end")
+        self.log2.insert("1.0", code)
+        self.log2.see("1.0")
 
-    def _needs_oauth(self) -> bool:
-        return self.output_mode.get() == "sheets_oauth"
-
+    # ====UI state / refresh
     def _refresh_ui(self):
         if self.output_mode.get() == "sheets_oauth":
             self.out_file_row.grid_remove()
@@ -632,7 +562,6 @@ class App(ctk.CTk):
             self.out_sheets_row.grid_remove()
             self.oauth_row.grid_remove()
             self.out_file_row.grid()
-
     def _refresh_html_ui(self):
         if self.html_input_mode.get() == "sheets_oauth":
             self.html_csv_row.grid_remove()
@@ -642,9 +571,10 @@ class App(ctk.CTk):
             self.html_sheets_row.grid_remove()
             self.html_oauth_row.grid_remove()
             self.html_csv_row.grid()
+    def _needs_oauth(self) -> bool:
+        return self.output_mode.get() == "sheets_oauth"
 
-    # ================= ACTIONS =================
-
+    # ====Validations
     def validate_inputs(self):
 
         # INPUT (UI rows)
@@ -673,7 +603,27 @@ class App(ctk.CTk):
                 return False, f"Falta el fitxer OAuth: {oauth_file}"
 
         return True, ""
+    def validate_html_inputs(self):
+        mode = self.html_input_mode.get()
 
+        if mode == "csv":
+            path = self.html_input_csv_path.get().strip()
+            if not path:
+                return False, "Selecciona el CSV d’entrada."
+            if not os.path.exists(path):
+                return False, "El CSV d’entrada no existeix."
+        else:
+            if not self.html_sheet_title.get().strip():
+                return False, "Omple el títol del Google Sheet."
+            if not self.html_sheet_tab.get().strip():
+                return False, "Omple el nom de la pestanya."
+            oauth_file = self.oauth_client_json.get().strip() or "oauth_client.json"
+            if not os.path.exists(oauth_file):
+                return False, f"Falta el fitxer OAuth: {oauth_file}"
+
+        return True, ""
+
+    # ====Actions
     def run_clicked(self):
         ok, err = self.validate_inputs()
         if not ok:
@@ -689,7 +639,24 @@ class App(ctk.CTk):
 
         t = threading.Thread(target=self._run_background, daemon=True)
         t.start()
+    def generate_html_clicked(self):
+        ok, err = self.validate_html_inputs()
+        if not ok:
+            messagebox.showerror("Error", err)
+            return
 
+        self.gen_btn.configure(state="disabled")
+        self.ui_log2("\n▶ Generant HTML d’aprovats…")
+
+        t = threading.Thread(target=self._generate_html_background, daemon=True)
+        t.start()
+    def _reset_ui(self):
+        self.progress.stop()
+        self.progress.configure(mode="determinate")
+        self.progress.set(0)
+        self.run_btn.configure(state="normal")
+
+    # ====Background workers (threads)
     def _run_background(self):
         start_time = time.time()
         try:
@@ -744,13 +711,30 @@ class App(ctk.CTk):
             self.after(0, lambda: messagebox.showerror("Error", error_msg))
         finally:
             self.after(0, self._reset_ui)
+    def _generate_html_background(self):
+        try:
+            mode = self.html_input_mode.get()
+            stats = core.run_approved_to_html_pipeline(
+                input_mode=mode,
+                input_csv_path=self.html_input_csv_path.get().strip() if mode == "csv" else None,
+                sheet_title=self.html_sheet_title.get().strip() if mode == "sheets_oauth" else None,
+                sheet_tab=self.html_sheet_tab.get().strip() if mode == "sheets_oauth" else None,
+                oauth_client_json=self.oauth_client_json.get().strip() or "oauth_client.json",
+                token_file=self.token_file.get().strip() or "token.json",
+                log=self.ui_log2,
+            )
 
-    def _reset_ui(self):
-        self.progress.stop()
-        self.progress.configure(mode="determinate")
-        self.progress.set(0)
-        self.run_btn.configure(state="normal")
+            html_code = stats.get("html_text", "")
+            self.after(0, lambda: self._show_generated_code(html_code))
 
+        except Exception as e:
+            msg = str(e)
+            self.ui_log2(f"❌ Error: {msg}")
+            self.after(0, lambda: messagebox.showerror("Error", msg))
+        finally:
+            self.after(0, lambda: self.gen_btn.configure(state="normal"))
+
+    # ====Data extraction from UI
     def get_sources_from_ui(self):
         out = []
         for r in self.source_rows:
@@ -769,5 +753,6 @@ class App(ctk.CTk):
             out.append((url, topic))
         return out
 
+# ENTRY POINT
 if __name__ == "__main__":
     App().mainloop()

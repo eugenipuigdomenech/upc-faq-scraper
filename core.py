@@ -1,3 +1,4 @@
+# IMPORTS + CONSTANTS
 import csv,json,os,html,requests,gspread
 from datetime import datetime
 from typing import List, Tuple, Optional, Dict, Any
@@ -5,9 +6,6 @@ from bs4 import BeautifulSoup
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-
-
-# ---------- Constants ----------
 SHEETS_COLUMNS = [
     "Tema",
     "Pregunta",
@@ -19,14 +17,12 @@ SHEETS_COLUMNS = [
     "Dades amb actualització anual",
     "Font",
 ]
-
 OAUTH_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
 
-
-# ---------- OAuth (Google login) ----------
+# GOOGLE AUTH / CLIENT
 def get_oauth_client(oauth_client_json="oauth_client.json", token_file="token.json"):
     creds = None
     if os.path.exists(token_file):
@@ -39,8 +35,6 @@ def get_oauth_client(oauth_client_json="oauth_client.json", token_file="token.js
             f.write(creds.to_json())
 
     return gspread.authorize(creds)
-
-
 def get_client(credentials_json: str):
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -49,19 +43,16 @@ def get_client(credentials_json: str):
     creds = ServiceAccountCredentials.from_service_account_file(credentials_json, scopes=scopes)
     return gspread.authorize(creds)
 
-
+# GOOGLE SHEETS HELPERS
 def open_sheet_by_title(client, spreadsheet_title: str):
     return client.open(spreadsheet_title)
-
-
 def open_or_create_worksheet(sh, worksheet_name: str, rows: int = 1000, cols: int = 12):
     try:
         return sh.worksheet(worksheet_name)
     except Exception:
         return sh.add_worksheet(title=worksheet_name, rows=rows, cols=cols)
 
-
-# ---------- INPUT (pas 1: llista d’URLs) ----------
+# INPUT / LECTURA DE DADES
 def read_sources_csv(path: str) -> List[Tuple[str, str]]:
     """
     Accepta CSV amb o sense capçalera.
@@ -119,9 +110,24 @@ def read_sources_csv(path: str) -> List[Tuple[str, str]]:
             out = parse_without_header()
 
         return out
+def read_rows_from_csv_like_sheets(path: str) -> List[Dict[str, str]]:
+    """Llegeix CSV amb capçalera tipus SHEETS_COLUMNS i retorna dicts."""
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        sample = f.read(4096)
+        f.seek(0)
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=";,")
+        except Exception:
+            dialect = csv.excel
+            dialect.delimiter = ";"
 
+        reader = csv.DictReader(f, dialect=dialect)
+        rows: List[Dict[str, str]] = []
+        for r in reader:
+            rows.append({(k or "").strip(): (v or "").strip() for k, v in r.items() if k})
+        return rows
 
-# ---------- SCRAPE ----------
+# SCRAPING
 def scrape_faqs(url: str, log=None, debug: bool = False) -> List[Tuple[str, str]]:
     """
     Suporta:
@@ -272,13 +278,8 @@ def scrape_faqs(url: str, log=None, debug: bool = False) -> List[Tuple[str, str]
 
     return faqs
 
-
-# ---------- BUILD ----------
-def build_outputs(
-    sources: List[Tuple[str, str]],
-    log=None,
-    debug: bool = False,
-) -> Tuple[List[List[str]], List[Dict[str, Any]], Dict[str, int], List[Dict[str, str]]]:
+# TRANSFORMACIÓ / BUILD DEL MODEL DE DADES
+def build_outputs(sources: List[Tuple[str, str]],log=None,debug: bool = False,) -> Tuple[List[List[str]], List[Dict[str, Any]], Dict[str, int], List[Dict[str, str]]]:
     def _log(m: str):
         if log:
             log(m)
@@ -342,24 +343,15 @@ def build_outputs(
     }
     return out_rows, genweb_blocks, stats, errors
 
-
-# ---------- OUTPUT: CSV ----------
+# EXPORTS
+    # EXPORT: CSV
 def export_like_sheets_csv(rows: List[List[str]], output_path: str):
     with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, delimiter=";")
         w.writerow(SHEETS_COLUMNS)
-        w.writerows(rows)
-
-
-# ---------- OUTPUT: Sheets (OAuth) ----------
-def export_rows_to_google_sheets_oauth(
-    rows: List[List[str]],
-    spreadsheet_title: str,
-    worksheet_name: str,
-    oauth_client_json: str = "oauth_client.json",
-    token_file: str = "token.json",
-    log=None,
-):
+        w.writerows(rows)       # f
+    # EXPORT: GOOGLE SHEETS (OAuth)
+def export_rows_to_google_sheets_oauth(rows: List[List[str]],spreadsheet_title: str,worksheet_name: str,oauth_client_json: str = "oauth_client.json",token_file: str = "token.json",log=None,):
     import re
 
     def _log(m: str):
@@ -453,108 +445,15 @@ def export_rows_to_google_sheets_oauth(
         _log("No s’ha afegit res (tot eren duplicats de resposta).")
 
     ws.update_acell("K1", f"LAST_WRITE: {now_ts}")
-
-
-# ---------- OUTPUT: Genweb JSON (si el vols mantenir) ----------
+    # EXPORT: JSON (backup)
 def export_genweb_json(blocks: List[Dict[str, Any]], output_path: str):
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(blocks, f, ensure_ascii=False, indent=2)
 
 
-# ---------- PIPELINE (pas 1) ----------
-def run_pipeline(
-    input_mode: str,                    # "csv" | "ui"
-    output_mode: str,                   # "csv" | "sheets_oauth" | "genweb_json"
-    sources_csv_path: Optional[str] = None,
-    sources: Optional[List[Tuple[str, str]]] = None,
-    output_file_path: Optional[str] = None,
-    output_sheet_title: Optional[str] = None,
-    output_sheet_tab: Optional[str] = None,
-    oauth_client_json: str = "oauth_client.json",
-    token_file: str = "token.json",
-    log=None,
-    debug: bool = False,
-):
-    def _log(m: str):
-        if log:
-            log(m)
-
-    # --- Load sources ---
-    if input_mode == "ui":
-        if not sources:
-            raise RuntimeError("No s’han afegit URLs a la UI.")
-    elif input_mode == "csv":
-        if not sources_csv_path:
-            raise RuntimeError("Falta el fitxer CSV d’entrada.")
-        sources = read_sources_csv(sources_csv_path)
-    else:
-        raise RuntimeError("input_mode ha de ser 'csv' o 'ui'.")
-
-    _log(f"Sources loaded: {len(sources)}")
-    if not sources:
-        raise RuntimeError("No s’han trobat URLs. Afegeix almenys una URL.")
-
-    rows, blocks, stats, errors = build_outputs(sources, log=log, debug=debug)
-
-    if output_mode == "csv":
-        if not output_file_path:
-            raise RuntimeError("Falta el fitxer CSV de sortida.")
-        export_like_sheets_csv(rows, output_file_path)
-        _log(f"CSV written: {output_file_path}")
-
-    elif output_mode == "genweb_json":
-        if not output_file_path:
-            raise RuntimeError("Falta el fitxer JSON de sortida.")
-        export_genweb_json(blocks, output_file_path)
-        _log(f"Genweb JSON written: {output_file_path}")
-
-    elif output_mode == "sheets_oauth":
-        if not (output_sheet_title and output_sheet_tab):
-            raise RuntimeError("Falta el títol o la pestanya del Google Sheet de sortida.")
-        export_rows_to_google_sheets_oauth(
-            rows=rows,
-            spreadsheet_title=output_sheet_title,
-            worksheet_name=output_sheet_tab,
-            oauth_client_json=oauth_client_json,
-            token_file=token_file,
-            log=log,
-        )
-        _log(f"Exported to Google Sheets: {output_sheet_title} / {output_sheet_tab}")
-
-    else:
-        raise RuntimeError("output_mode ha de ser 'csv', 'sheets_oauth' o 'genweb_json'.")
-
-    return stats
-
-
-# =====================================================================================
-# ========================  PAS 2: APROVATS -> HTML UPC  ==============================
-# =====================================================================================
-
-def read_rows_from_csv_like_sheets(path: str) -> List[Dict[str, str]]:
-    """Llegeix CSV amb capçalera tipus SHEETS_COLUMNS i retorna dicts."""
-    with open(path, "r", encoding="utf-8-sig", newline="") as f:
-        sample = f.read(4096)
-        f.seek(0)
-        try:
-            dialect = csv.Sniffer().sniff(sample, delimiters=";,")
-        except Exception:
-            dialect = csv.excel
-            dialect.delimiter = ";"
-
-        reader = csv.DictReader(f, dialect=dialect)
-        rows: List[Dict[str, str]] = []
-        for r in reader:
-            rows.append({(k or "").strip(): (v or "").strip() for k, v in r.items() if k})
-        return rows
-
-
-def read_rows_from_sheets_oauth(
-    spreadsheet_title: str,
-    worksheet_name: str,
-    oauth_client_json: str = "oauth_client.json",
-    token_file: str = "token.json",
-) -> List[Dict[str, str]]:
+# APPROVALS → HTML
+    # APPROVALS: INPUT (from Sheets)
+def read_rows_from_sheets_oauth(spreadsheet_title: str,worksheet_name: str,oauth_client_json: str = "oauth_client.json",token_file: str = "token.json",) -> List[Dict[str, str]]:
     """Llegeix totes les files d'una pestanya (capçalera a la primera fila)."""
     client = get_oauth_client(oauth_client_json=oauth_client_json, token_file=token_file)
     sh = client.open(spreadsheet_title)
@@ -572,8 +471,7 @@ def read_rows_from_sheets_oauth(
             d[col] = (row[i] if i < len(row) else "").strip()
         out.append(d)
     return out
-
-
+    # APPROVALS: FILTERING
 def filter_approved(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     approved_values = {"aprobat", "aprovada", "approved"}
     out = []
@@ -582,8 +480,7 @@ def filter_approved(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
         if estat in approved_values:
             out.append(r)
     return out
-
-
+    # APPROVALS: HTML RENDER
 def _answer_to_html_paragraph(answer: str) -> str:
     a = (answer or "").strip()
     a = html.escape(a)
@@ -591,8 +488,6 @@ def _answer_to_html_paragraph(answer: str) -> str:
     a = a.replace("\n\n", "<br /><br />")
     a = a.replace("\n", "<br />")
     return a
-
-
 def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
     out: List[str] = []
     out.append('<div id="faqAccordion" style="margin-bottom: 40px;">')
@@ -731,23 +626,64 @@ def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
     out.append('</p>')
 
     return "\n".join(out)
-
-
+    # APPROVALS: OUTPUT
 def export_text(output_path: str, text: str):
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(text)
 
+# PIPELINES
+def run_pipeline(input_mode: str,sources_csv_path: Optional[str] = None,sources: Optional[List[Tuple[str, str]]] = None,output_file_path: Optional[str] = None,output_sheet_title: Optional[str] = None,output_sheet_tab: Optional[str] = None,oauth_client_json: str = "oauth_client.json",token_file: str = "token.json",log=None,debug: bool = False,):
+    def _log(m: str):
+        if log:
+            log(m)
 
-def run_approved_to_html_pipeline(
-    input_mode: str,  # "csv" | "sheets_oauth"
-    input_csv_path: Optional[str] = None,
-    sheet_title: Optional[str] = None,
-    sheet_tab: Optional[str] = None,
-    oauth_client_json: str = "oauth_client.json",
-    token_file: str = "token.json",
-    output_path: str = "faqs_aprovades.txt",
-    log=None,
-) -> Dict[str, int]:
+    # --- Load sources ---
+    if input_mode == "ui":
+        if not sources:
+            raise RuntimeError("No s’han afegit URLs a la UI.")
+    elif input_mode == "csv":
+        if not sources_csv_path:
+            raise RuntimeError("Falta el fitxer CSV d’entrada.")
+        sources = read_sources_csv(sources_csv_path)
+    else:
+        raise RuntimeError("input_mode ha de ser 'csv' o 'ui'.")
+
+    _log(f"Sources loaded: {len(sources)}")
+    if not sources:
+        raise RuntimeError("No s’han trobat URLs. Afegeix almenys una URL.")
+
+    rows, blocks, stats, errors = build_outputs(sources, log=log, debug=debug)
+
+    if output_mode == "csv":
+        if not output_file_path:
+            raise RuntimeError("Falta el fitxer CSV de sortida.")
+        export_like_sheets_csv(rows, output_file_path)
+        _log(f"CSV written: {output_file_path}")
+
+    elif output_mode == "genweb_json":
+        if not output_file_path:
+            raise RuntimeError("Falta el fitxer JSON de sortida.")
+        export_genweb_json(blocks, output_file_path)
+        _log(f"Genweb JSON written: {output_file_path}")
+
+    elif output_mode == "sheets_oauth":
+        if not (output_sheet_title and output_sheet_tab):
+            raise RuntimeError("Falta el títol o la pestanya del Google Sheet de sortida.")
+        export_rows_to_google_sheets_oauth(
+            rows=rows,
+            spreadsheet_title=output_sheet_title,
+            worksheet_name=output_sheet_tab,
+            oauth_client_json=oauth_client_json,
+            token_file=token_file,
+            log=log,
+        )
+        _log(f"Exported to Google Sheets: {output_sheet_title} / {output_sheet_tab}")
+
+    else:
+        raise RuntimeError("output_mode ha de ser 'csv', 'sheets_oauth' o 'genweb_json'.")
+
+    return stats
+def run_approved_to_html_pipeline(input_mode: str,input_csv_path: Optional[str] = None,sheet_title: Optional[str] = None,sheet_tab: Optional[str] = None,oauth_client_json: str = "oauth_client.json",token_file: str = "token.json",output_path: str = "faqs_aprovades.txt",log=None,) -> Dict[str, int]:
     def _log(m: str):
         if log:
             log(m)
