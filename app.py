@@ -7,6 +7,8 @@ import core
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image
+from dataclasses import dataclass
+import hashlib
 
 # CONSTANTS DE CONFIGURACIÓ
 TOPICS_UI = ["Graus", "Masters", "TFE", "Mobilitat", "Empresa", "Acte de graduació"]
@@ -44,6 +46,14 @@ BG = "#FFFFFF"
 LIGHT_PANEL = "#F3F4F6"
 TEXT_MUTED = "#4B5563"
 ctk.set_appearance_mode("light")
+@dataclass
+class FaqItem:
+    id: str
+    topic: str
+    question: str
+    answer: str
+    source: str
+    approved_var: ctk.BooleanVar
 
 # HELPERS
 def resource_path(relative_path: str) -> str:
@@ -103,6 +113,9 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
 
+        self.scraped_items: list[FaqItem] = []
+        self.review_filter_only_approved = ctk.BooleanVar(value=False)
+
         # Fix icona barra de tasques Windows (més fiable a l'EXE)
         if ctypes:
             try:
@@ -112,8 +125,8 @@ class App(ctk.CTk):
                 pass
 
         self.title("UPC FAQ Scraper")
-        self.geometry("1100x760")
-        self.minsize(980, 680)
+        self.geometry("1250x880")
+        self.minsize(1100, 780)
         self.configure(fg_color=BG)
 
         # Taskbar icon
@@ -122,10 +135,9 @@ class App(ctk.CTk):
         except Exception as e:
             print("No s'ha pogut carregar .ico:", e)
 
-        # ---------- State ----------
         # INPUT: sempre CSV
         self.input_mode = ctk.StringVar(value="ui")
-        self.output_mode = ctk.StringVar(value="csv")
+        self.output_mode = ctk.StringVar(value="ui")
 
         # Input CSV
         # Input UI rows: each row = {"url_var": StringVar, "topic_var": StringVar, "frame": Frame}
@@ -187,25 +199,29 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=22, weight="bold"),
         ).pack(side="right", padx=18)
     def _build_body(self):
-        body = ctk.CTkScrollableFrame(self, fg_color=BG)
+        body = ctk.CTkFrame(self, fg_color=BG)
         body.pack(fill="both", expand=True, padx=18, pady=18)
-        body.grid_columnconfigure(0, weight=1)
 
-        # Tabs
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_rowconfigure(0, weight=1)
+
         tabs = ctk.CTkTabview(body)
-        tabs.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 10))
+        tabs.grid(row=0, column=0, sticky="nsew", padx=6, pady=(0, 10))  # 👈 CANVIA row=1 → row=0
 
         tab_scrape = tabs.add("1) Descarregar FAQs per revisar")
-        tab_html = tabs.add("2) Convertir FAQs aprovades a codi (Genweb)")
+        tab_review = tabs.add("2) Revisar i aprovar (UI)")
+        tab_html = tabs.add("3) Convertir / Exportar")
+
+        # IMPORTANT: només cridem la que sí existeix
+        self._build_tab_review(tab_review)
 
         tab_scrape.grid_columnconfigure(0, weight=1)
         tab_html.grid_columnconfigure(0, weight=1)
+        tab_html.grid_rowconfigure(3, weight=1)  # la fila del log2
 
-        # =========================
+
+
         # TAB 1: SCRAPE I EXPORTA
-        # =========================
-
-        # --- ENTRADA card ---
         self.in_card = ctk.CTkFrame(tab_scrape, fg_color=LIGHT_PANEL, corner_radius=10)
         self.in_card.grid(row=0, column=0, sticky="ew", padx=6, pady=(0, 10))
         self.in_card.grid_columnconfigure(0, weight=1)
@@ -255,6 +271,12 @@ class App(ctk.CTk):
 
         out_mode_frame = ctk.CTkFrame(self.out_card, fg_color="transparent")
         out_mode_frame.grid(row=1, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 6))
+
+        ctk.CTkRadioButton(
+            out_mode_frame, text="Aprovar via UI",
+            variable=self.output_mode, value="ui",
+            command=self._refresh_ui
+        ).pack(side="left", padx=(0, 18))
 
         ctk.CTkRadioButton(
             out_mode_frame, text="CSV",
@@ -328,12 +350,9 @@ class App(ctk.CTk):
         self.log = ctk.CTkTextbox(tab_scrape, height=260)
         self.log.grid(row=4, column=0, padx=6, pady=10, sticky="nsew")
 
-        # =========================
         # TAB 2: APROVATS → HTML
-        # =========================
-
         # (variables ja les tens definides en altres llocs? si no, aquí també val)
-        self.html_input_mode = ctk.StringVar(value="csv")
+        self.html_input_mode = ctk.StringVar(value="ui")
         self.html_input_csv_path = ctk.StringVar()
         self.html_sheet_title = ctk.StringVar()
         self.html_sheet_tab = ctk.StringVar()
@@ -350,6 +369,12 @@ class App(ctk.CTk):
 
         mode_frame2 = ctk.CTkFrame(card2, fg_color="transparent")
         mode_frame2.grid(row=1, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 6))
+
+        ctk.CTkRadioButton(
+            mode_frame2, text="Aprovades a la UI (recomanat)",
+            variable=self.html_input_mode, value="ui",
+            command=self._refresh_html_ui
+        ).pack(side="left", padx=(0, 18))
 
         ctk.CTkRadioButton(
             mode_frame2, text="CSV editat",
@@ -417,6 +442,16 @@ class App(ctk.CTk):
 
         self.log2 = ctk.CTkTextbox(tab_html, height=260)
         self.log2.grid(row=3, column=0, padx=6, pady=10, sticky="nsew")
+
+        copy_row = ctk.CTkFrame(tab_html, fg_color="transparent")
+        copy_row.grid(row=4, column=0, sticky="w", padx=6, pady=(0, 10))
+
+        ctk.CTkButton(
+            copy_row,
+            text="📋 Copiar tot el codi",
+            command=self.copy_generated_code,
+            width=180
+        ).pack(side="left")
 
         # Refresh inicials (important)
         self._refresh_ui()
@@ -548,6 +583,29 @@ class App(ctk.CTk):
         ctk.CTkEntry(parent, textvariable=var).grid(row=row, column=1, padx=6, pady=6, sticky="ew")
         ctk.CTkLabel(parent, text="").grid(row=row, column=2, padx=6, pady=6)  # spacer
 
+    def _load_scraped_into_ui(self, flat_items: list[tuple[str, str, str, str]]):
+        """
+        flat_items: [(topic, question, answer, source), ...]
+        Aquesta funció s'executa al fil principal (UI).
+        """
+        items = []
+        for topic, question, answer, source in flat_items:
+            fid = self._make_id(topic, question, source)
+            items.append(
+                FaqItem(
+                    id=fid,
+                    topic=topic,
+                    question=question,
+                    answer=answer,
+                    source=source,
+                    approved_var=ctk.BooleanVar(value=False),
+                )
+            )
+
+        self.scraped_items = items
+        self.review_filter_only_approved.set(False)
+        self._refresh_review_list()
+
     # ====UI Logging / output
     def println(self, msg):
         self.log.insert("end", msg + "\n")
@@ -566,20 +624,38 @@ class App(ctk.CTk):
 
     # ====UI state / refresh
     def _refresh_ui(self):
-        if self.output_mode.get() == "sheets_oauth":
+        mode = self.output_mode.get()
+
+        if mode == "ui":
+            # No cal mostrar cap sortida: només omplirem la Tab 2
+            self.out_file_row.grid_remove()
+            self.out_sheets_row.grid_remove()
+            self.oauth_row.grid_remove()
+
+        elif mode == "sheets_oauth":
             self.out_file_row.grid_remove()
             self.out_sheets_row.grid()
             self.oauth_row.grid()
-        else:
+
+        else:  # csv
             self.out_sheets_row.grid_remove()
             self.oauth_row.grid_remove()
             self.out_file_row.grid()
+
     def _refresh_html_ui(self):
-        if self.html_input_mode.get() == "sheets_oauth":
+        mode = self.html_input_mode.get()
+
+        if mode == "ui":
+            self.html_csv_row.grid_remove()
+            self.html_sheets_row.grid_remove()
+            self.html_oauth_row.grid_remove()
+
+        elif mode == "sheets_oauth":
             self.html_csv_row.grid_remove()
             self.html_sheets_row.grid()
             self.html_oauth_row.grid()
-        else:
+
+        else:  # csv
             self.html_sheets_row.grid_remove()
             self.html_oauth_row.grid_remove()
             self.html_csv_row.grid()
@@ -596,27 +672,34 @@ class App(ctk.CTk):
 
         # OUTPUT
         mode = self.output_mode.get()
-        if mode == "csv":
+
+        if mode == "ui":
+            pass  # no validem res de sortida
+        elif mode == "csv":
             out = self.output_file_path.get().strip()
             if not out:
                 return False, "Selecciona un fitxer de sortida."
-            if mode == "csv" and not out.lower().endswith(".csv"):
+            if not out.lower().endswith(".csv"):
                 return False, "En mode CSV, el fitxer de sortida ha d’acabar en .csv"
-        else:
+        else:  # sheets_oauth
             if not self.output_sheet_title.get().strip():
                 return False, "Omple el títol del Google Sheet."
             if not self.output_sheet_tab.get().strip():
                 return False, "Omple el nom de la pestanya."
 
         # OAuth files
-        if self._needs_oauth():
-            oauth_file = self.oauth_client_json.get().strip() or "oauth_client.json"
-            if not os.path.exists(oauth_file):
-                return False, f"Falta el fitxer OAuth: {oauth_file}"
+        def _needs_oauth(self) -> bool:
+            return self.output_mode.get() == "sheets_oauth"
 
         return True, ""
+
     def validate_html_inputs(self):
         mode = self.html_input_mode.get()
+
+        if mode == "ui":
+            if not self._get_approved_rows():
+                return False, "No has aprovat cap FAQ a la pestanya 2."
+            return True, ""
 
         if mode == "csv":
             path = self.html_input_csv_path.get().strip()
@@ -624,7 +707,9 @@ class App(ctk.CTk):
                 return False, "Selecciona el CSV d’entrada."
             if not os.path.exists(path):
                 return False, "El CSV d’entrada no existeix."
-        else:
+            return True, ""
+
+        if mode == "sheets_oauth":
             if not self.html_sheet_title.get().strip():
                 return False, "Omple el títol del Google Sheet."
             if not self.html_sheet_tab.get().strip():
@@ -632,8 +717,9 @@ class App(ctk.CTk):
             oauth_file = self.oauth_client_json.get().strip() or "oauth_client.json"
             if not os.path.exists(oauth_file):
                 return False, f"Falta el fitxer OAuth: {oauth_file}"
+            return True, ""
 
-        return True, ""
+        return False, "Mode d’entrada desconegut."
 
     # ====Actions
     def run_clicked(self):
@@ -672,31 +758,41 @@ class App(ctk.CTk):
     def _run_background(self):
         start_time = time.time()
         try:
-            input_mode = self.input_mode.get()          # sempre csv
             output_mode = self.output_mode.get()
-
             sources = self.get_sources_from_ui()
 
-            stats = core.run_pipeline(
-                input_mode="ui",
-                output_mode=output_mode,
+            if output_mode == "ui":
+                rows, blocks, stats, errors = core.build_outputs(sources, log=self.ui_log, debug=False)
 
-                sources=sources,
+                flat_items: list[tuple[str, str, str, str]] = []
+                for b in blocks:
+                    topic = b.get("topic", "")
+                    source = b.get("source_url", "")
+                    for it in b.get("items", []) or []:
+                        question = it.get("q", "")
+                        answer = it.get("a", "")
+                        flat_items.append((topic, question, answer, source))
 
-                output_sheet_title=self.output_sheet_title.get().strip()
-                if output_mode == "sheets_oauth" else None,
+                # carregar a la UI al fil principal
+                self.after(0, lambda: self._load_scraped_into_ui(flat_items))
+                self.ui_log(f"✅ Carregades a la UI: {len(flat_items)} FAQs")
 
-                output_sheet_tab=self.output_sheet_tab.get().strip()
-                if output_mode == "sheets_oauth" else None,
-
-                output_file_path=self.output_file_path.get().strip() if output_mode == "csv" else None,
-
-                oauth_client_json=self.oauth_client_json.get().strip() or "oauth_client.json",
-                token_file=self.token_file.get().strip() or "token.json",
-
-                log=self.ui_log
-
-            )
+            else:
+                stats = core.run_pipeline(
+                    input_mode="ui",
+                    output_mode=output_mode,
+                    sources=sources,
+                    output_sheet_title=self.output_sheet_title.get().strip()
+                    if output_mode == "sheets_oauth" else None,
+                    output_sheet_tab=self.output_sheet_tab.get().strip()
+                    if output_mode == "sheets_oauth" else None,
+                    output_file_path=self.output_file_path.get().strip()
+                    if output_mode == "csv" else None,
+                    oauth_client_json=self.oauth_client_json.get().strip() or "oauth_client.json",
+                    token_file=self.token_file.get().strip() or "token.json",
+                    log=self.ui_log,
+                    debug=False,
+                )
 
             elapsed = round(time.time() - start_time, 2)
 
@@ -723,9 +819,24 @@ class App(ctk.CTk):
             self.after(0, lambda: messagebox.showerror("Error", error_msg))
         finally:
             self.after(0, self._reset_ui)
+
     def _generate_html_background(self):
         try:
             mode = self.html_input_mode.get()
+
+            if mode == "ui":
+                approved_rows = self._get_approved_rows()
+
+                if not approved_rows:
+                    raise RuntimeError("No hi ha cap FAQ aprovada a la pestanya 2.")
+
+                # 👇 ARA cridem una funció nova de core
+                html_text = core.approved_rows_to_html(approved_rows, log=self.ui_log2)
+
+                self.after(0, lambda: self._show_generated_code(html_text))
+                return
+
+            # --- MODE CSV / SHEETS (com abans) ---
             stats = core.run_approved_to_html_pipeline(
                 input_mode=mode,
                 input_csv_path=self.html_input_csv_path.get().strip() if mode == "csv" else None,
@@ -764,6 +875,102 @@ class App(ctk.CTk):
 
             out.append((url, topic))
         return out
+
+    def _build_tab_review(self, parent):
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(1, weight=1)
+
+        top = ctk.CTkFrame(parent, fg_color="transparent")
+        top.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 6))
+
+        ctk.CTkButton(top, text="Aprovar totes", command=self._approve_all).pack(side="left")
+        ctk.CTkButton(top, text="Desmarcar totes", command=self._unapprove_all).pack(side="left", padx=(8, 0))
+
+        ctk.CTkCheckBox(
+            top,
+            text="Mostrar només aprovades",
+            variable=self.review_filter_only_approved,
+            command=self._refresh_review_list,
+        ).pack(side="left", padx=(12, 0))
+
+        self.review_list = ctk.CTkScrollableFrame(parent)
+        self.review_list.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+
+        self._refresh_review_list()
+
+    def _refresh_review_list(self):
+        if not hasattr(self, "review_list"):
+            return
+
+        for w in self.review_list.winfo_children():
+            w.destroy()
+
+        if not self.scraped_items:
+            ctk.CTkLabel(self.review_list, text="Encara no hi ha FAQs. Fes scraping a la pestanya 1.").pack(pady=10)
+            return
+
+        only_approved = self.review_filter_only_approved.get()
+
+        for item in self.scraped_items:
+            if only_approved and not item.approved_var.get():
+                continue
+            self._add_review_row(self.review_list, item)
+
+
+    def _add_review_row(self, parent, item: FaqItem):
+        row = ctk.CTkFrame(parent)
+        row.pack(fill="x", pady=6, padx=6)
+
+        cb = ctk.CTkCheckBox(row, text="", variable=item.approved_var)
+        cb.grid(row=0, column=0, rowspan=2, padx=(8, 8), pady=8, sticky="n")
+
+        q = ctk.CTkLabel(row, text=item.question, anchor="w", justify="left", wraplength=700)
+        q.grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=(8, 2))
+
+        a = ctk.CTkLabel(row, text=item.answer, anchor="w", justify="left", wraplength=700, text_color="#4B5563")
+        a.grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(0, 8))
+
+        row.grid_columnconfigure(1, weight=1)
+
+
+    def _approve_all(self):
+        for it in self.scraped_items:
+            it.approved_var.set(True)
+        self._refresh_review_list()
+
+
+    def _unapprove_all(self):
+        for it in self.scraped_items:
+            it.approved_var.set(False)
+        self._refresh_review_list()
+
+
+    def _get_approved_rows(self) -> list[list[str]]:
+        rows = []
+        for it in self.scraped_items:
+            if it.approved_var.get():
+                rows.append([it.topic, it.question, it.answer, it.source])
+        return rows
+
+
+    def _make_id(self, topic: str, question: str, source: str) -> str:
+        s = f"{topic}|{question}|{source}".encode("utf-8")
+        return hashlib.sha1(s).hexdigest()[:12]
+
+    def copy_generated_code(self):
+        try:
+            text = self.log2.get("1.0", "end-1c")  # tot menys l'últim salt de línia
+            if not text.strip():
+                messagebox.showinfo("Copiar", "No hi ha cap codi per copiar.")
+                return
+
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self.update()  # assegura que queda al clipboard
+            messagebox.showinfo("Copiat", "Codi copiat al porta-retalls ✅")
+        except Exception as e:
+            messagebox.showerror("Error", f"No s'ha pogut copiar: {e}")
+
 
 # ENTRY POINT
 if __name__ == "__main__":

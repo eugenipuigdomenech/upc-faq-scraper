@@ -632,6 +632,29 @@ def export_text(output_path: str, text: str):
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(text)
 
+def approved_rows_to_html(approved_rows, log=None):
+    def _log(m):
+        if log:
+            log(m)
+
+    _log(f"Generant HTML per {len(approved_rows)} FAQs aprovades (UI)...")
+
+    # Convertim approved_rows (llista) al mateix format que espera render_upc_faqaccordion()
+    # render_upc_faqaccordion() espera: [{"Tema":..., "Pregunta":..., "Resposta":...}, ...]
+    items = []
+    for row in approved_rows:
+        topic, question, answer, source = row
+        items.append({
+            "Tema": topic,
+            "Pregunta": question,
+            "Resposta": answer,
+            "Font": source,
+        })
+
+    # IMPORTANT: reutilitzem el render "bo" que ja inclou <script> i l'estil UPC
+    return render_upc_faqaccordion(items)
+
+
 # PIPELINES
 def run_pipeline(input_mode: str,output_mode: str,sources_csv_path: Optional[str] = None,sources: Optional[List[Tuple[str, str]]] = None,output_file_path: Optional[str] = None,output_sheet_title: Optional[str] = None,output_sheet_tab: Optional[str] = None,oauth_client_json: str = "oauth_client.json",token_file: str = "token.json",log=None,debug: bool = False,):
     def _log(m: str):
@@ -660,13 +683,11 @@ def run_pipeline(input_mode: str,output_mode: str,sources_csv_path: Optional[str
             raise RuntimeError("Falta el fitxer CSV de sortida.")
         export_like_sheets_csv(rows, output_file_path)
         _log(f"CSV written: {output_file_path}")
-
     elif output_mode == "genweb_json":
         if not output_file_path:
             raise RuntimeError("Falta el fitxer JSON de sortida.")
         export_genweb_json(blocks, output_file_path)
         _log(f"Genweb JSON written: {output_file_path}")
-
     elif output_mode == "sheets_oauth":
         if not (output_sheet_title and output_sheet_tab):
             raise RuntimeError("Falta el títol o la pestanya del Google Sheet de sortida.")
@@ -682,6 +703,10 @@ def run_pipeline(input_mode: str,output_mode: str,sources_csv_path: Optional[str
 
     else:
         raise RuntimeError("output_mode ha de ser 'csv', 'sheets_oauth' o 'genweb_json'.")
+
+    # Per a la UI: retornem també els blocs amb Q/A
+    stats["blocks"] = blocks
+    stats["errors"] = errors
 
     return stats
 def run_approved_to_html_pipeline(input_mode: str,input_csv_path: Optional[str] = None,sheet_title: Optional[str] = None,sheet_tab: Optional[str] = None,oauth_client_json: str = "oauth_client.json",token_file: str = "token.json",output_path: str = "faqs_aprovades.txt",log=None,) -> Dict[str, int]:
