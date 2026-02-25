@@ -1,5 +1,10 @@
 # IMPORTS + CONSTANTS
-import csv,json,os,html,requests,gspread
+import csv
+import json
+import os
+import html
+import requests
+import gspread
 from datetime import datetime
 from typing import List, Tuple, Optional, Dict, Any
 from bs4 import BeautifulSoup
@@ -344,13 +349,11 @@ def build_outputs(sources: List[Tuple[str, str]],log=None,debug: bool = False,) 
     return out_rows, genweb_blocks, stats, errors
 
 # EXPORTS
-    # EXPORT: CSV
 def export_like_sheets_csv(rows: List[List[str]], output_path: str):
     with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, delimiter=";")
         w.writerow(SHEETS_COLUMNS)
         w.writerows(rows)       # f
-    # EXPORT: GOOGLE SHEETS (OAuth)
 def export_rows_to_google_sheets_oauth(rows: List[List[str]],spreadsheet_title: str,worksheet_name: str,oauth_client_json: str = "oauth_client.json",token_file: str = "token.json",log=None,):
     import re
 
@@ -450,9 +453,7 @@ def export_genweb_json(blocks: List[Dict[str, Any]], output_path: str):
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(blocks, f, ensure_ascii=False, indent=2)
 
-
 # APPROVALS → HTML
-    # APPROVALS: INPUT (from Sheets)
 def read_rows_from_sheets_oauth(spreadsheet_title: str,worksheet_name: str,oauth_client_json: str = "oauth_client.json",token_file: str = "token.json",) -> List[Dict[str, str]]:
     """Llegeix totes les files d'una pestanya (capçalera a la primera fila)."""
     client = get_oauth_client(oauth_client_json=oauth_client_json, token_file=token_file)
@@ -632,7 +633,7 @@ def export_text(output_path: str, text: str):
         f.write(text)
 
 # PIPELINES
-def run_pipeline(input_mode: str,sources_csv_path: Optional[str] = None,sources: Optional[List[Tuple[str, str]]] = None,output_file_path: Optional[str] = None,output_sheet_title: Optional[str] = None,output_sheet_tab: Optional[str] = None,oauth_client_json: str = "oauth_client.json",token_file: str = "token.json",log=None,debug: bool = False,):
+def run_pipeline(input_mode: str,output_mode: str,sources_csv_path: Optional[str] = None,sources: Optional[List[Tuple[str, str]]] = None,output_file_path: Optional[str] = None,output_sheet_title: Optional[str] = None,output_sheet_tab: Optional[str] = None,oauth_client_json: str = "oauth_client.json",token_file: str = "token.json",log=None,debug: bool = False,):
     def _log(m: str):
         if log:
             log(m)

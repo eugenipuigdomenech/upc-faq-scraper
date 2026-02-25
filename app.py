@@ -1,5 +1,9 @@
 # IMPORTS
-import os,sys,threading,time,core
+import os
+import sys
+import threading
+import time
+import core
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image
@@ -227,9 +231,17 @@ class App(ctk.CTk):
         self.sources_list.grid(row=1, column=0, sticky="ew", padx=0, pady=0)
         self.sources_list.grid_columnconfigure(0, weight=1)
 
-
         # Primera fila
         self.add_source_row()
+
+        # Botó per afegir més URLs
+        self.add_url_btn = ctk.CTkButton(
+            self.in_sources_row,
+            text="Afegeix una nova URL",
+            command=self.add_source_row,
+            width=180
+        )
+        self.add_url_btn.grid(row=2, column=0, sticky="w", padx=6, pady=(0, 6))
 
         # --- SORTIDA card ---
         self.out_card = ctk.CTkFrame(tab_scrape, fg_color=LIGHT_PANEL, corner_radius=10)
