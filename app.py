@@ -44,7 +44,7 @@ FAQ_FORMAT_HELP_TEXT = (
 UPC_BLUE = "#0066A1"
 UPC_BLUE_TAB = "#1E7FBE"  # blau UPC més suau per tabs
 BG = "#F5F6F8"
-LIGHT_PANEL = "#E9EDF2"
+LIGHT_PANEL = "#d2d5d9"
 TEXT_MUTED = "#4B5563"
 ctk.set_appearance_mode("light")
 @dataclass
@@ -259,16 +259,16 @@ class App(ctk.CTk):
 
         # --- SORTIDA card ---
         self.out_card = ctk.CTkFrame(tab_scrape, fg_color=LIGHT_PANEL, corner_radius=10)
-        self.out_card.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 10))
+        self.out_card.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 16))
         self.out_card.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
-            self.out_card, text="On vols desar el fitxer per revisar",
+            self.out_card, text="Tria on vols revisar i aprobar les FAQs",
             font=ctk.CTkFont(size=14, weight="bold")
         ).grid(row=0, column=0, columnspan=3, padx=12, pady=(10, 6), sticky="w")
 
         out_mode_frame = ctk.CTkFrame(self.out_card, fg_color="transparent")
-        out_mode_frame.grid(row=1, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 6))
+        out_mode_frame.grid(row=1, column=0, columnspan=3, sticky="w", padx=12, pady=(6, 14))
 
         ctk.CTkRadioButton(
             out_mode_frame, text="Aprovar via UI",
@@ -383,7 +383,7 @@ class App(ctk.CTk):
         ).grid(row=0, column=0, columnspan=3, padx=12, pady=(10, 6), sticky="w")
 
         mode_frame2 = ctk.CTkFrame(card2, fg_color="transparent")
-        mode_frame2.grid(row=1, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 6))
+        mode_frame2.grid(row=1, column=0, columnspan=3, sticky="w", padx=12, pady=(6, 14))
 
         ctk.CTkRadioButton(
             mode_frame2, text="Aprovades a la UI (recomanat)",
@@ -498,9 +498,9 @@ class App(ctk.CTk):
         row_frame.pack(fill="x", padx=6, pady=6)
 
         # 3 columnes: URL | desplegable | text lliure | (botó paperera a la dreta)
-        row_frame.grid_columnconfigure(0, weight=3)  # URL ample
+        row_frame.grid_columnconfigure(0, weight=1)  # URL ample
         row_frame.grid_columnconfigure(1, weight=0)  # dropdown fixed
-        row_frame.grid_columnconfigure(2, weight=2)  # custom topic ample
+        row_frame.grid_columnconfigure(2, weight=0)  # custom topic ample
         row_frame.grid_columnconfigure(3, weight=0)  # delete fixed
 
         url_var = ctk.StringVar(value=url_value)
