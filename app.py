@@ -42,8 +42,9 @@ FAQ_FORMAT_HELP_TEXT = (
 )
     # Theme
 UPC_BLUE = "#0066A1"
-BG = "#FFFFFF"
-LIGHT_PANEL = "#F3F4F6"
+UPC_BLUE_TAB = "#1E7FBE"  # blau UPC més suau per tabs
+BG = "#F5F6F8"
+LIGHT_PANEL = "#E9EDF2"
 TEXT_MUTED = "#4B5563"
 ctk.set_appearance_mode("light")
 @dataclass
@@ -159,14 +160,6 @@ class App(ctk.CTk):
         self._build_body()
         self._refresh_ui()
 
-        self.println(
-            "Aquesta eina té dues funcions:\n\n"
-            "1) Descarregador de FAQs: introdueix una URL amb preguntes freqüents "
-            "i genera un fitxer per revisar-les i marcar-les com aprovades.\n\n"
-            "2) Generador de codi per Genweb: importa el fitxer amb les FAQs "
-            "aprovades i obté el codi font llest per enganxar a la web."
-        )
-
     # ====Build UI
     def _build_header(self):
         header = ctk.CTkFrame(self, fg_color=UPC_BLUE, corner_radius=0, height=92)
@@ -206,11 +199,15 @@ class App(ctk.CTk):
         body.grid_rowconfigure(0, weight=1)
 
         tabs = ctk.CTkTabview(body)
-        tabs.grid(row=0, column=0, sticky="nsew", padx=6, pady=(0, 10))  # 👈 CANVIA row=1 → row=0
+        tabs.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 12))  # 👈 CANVIA row=1 → row=0
+        self._style_tabview(tabs)
+        self.after(50, lambda: self._fix_tab_text_colors(tabs))
 
         tab_scrape = tabs.add("1) Descarregar FAQs per revisar")
         tab_review = tabs.add("2) Revisar i aprovar (UI)")
         tab_html = tabs.add("3) Convertir / Exportar")
+
+        tab_scrape.grid_rowconfigure(4, weight=1)  # perquè el log s’expandeixi
 
         # IMPORTANT: només cridem la que sí existeix
         self._build_tab_review(tab_review)
@@ -220,6 +217,7 @@ class App(ctk.CTk):
         tab_html.grid_rowconfigure(3, weight=1)  # la fila del log2
 
 
+        tabs.configure(command=lambda: self._fix_tab_text_colors(tabs))
 
         # TAB 1: SCRAPE I EXPORTA
         self.in_card = ctk.CTkFrame(tab_scrape, fg_color=LIGHT_PANEL, corner_radius=10)
@@ -347,8 +345,25 @@ class App(ctk.CTk):
         self.progress.grid(row=3, column=0, sticky="ew", padx=6, pady=(6, 10))
         self.progress.set(0)
 
-        self.log = ctk.CTkTextbox(tab_scrape, height=260)
-        self.log.grid(row=4, column=0, padx=6, pady=10, sticky="nsew")
+
+        # --- LOG card (gris) ---
+        self.log_card = ctk.CTkFrame(tab_scrape, fg_color=LIGHT_PANEL, corner_radius=10)
+        self.log_card.grid(row=4, column=0, sticky="nsew", padx=6, pady=(0, 10))
+        self.log_card.grid_columnconfigure(0, weight=1)
+        self.log_card.grid_rowconfigure(0, weight=1)
+
+        self.log = ctk.CTkTextbox(self.log_card)
+        self.println(
+            "Aquesta eina té dues funcions:\n\n"
+            "1) Descarregador de FAQs: introdueix una URL amb preguntes freqüents "
+            "i genera un fitxer per revisar-les i marcar-les com aprovades.\n\n"
+            "2) Generador de codi per Genweb: importa el fitxer amb les FAQs "
+            "aprovades i obté el codi font llest per enganxar a la web."
+        )
+        self.log.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+
+
+
 
         # TAB 2: APROVATS → HTML
         # (variables ja les tens definides en altres llocs? si no, aquí també val)
@@ -440,8 +455,13 @@ class App(ctk.CTk):
         self.gen_btn = ctk.CTkButton(btns2, text="Generar codi font per Genweb", command=self.generate_html_clicked, width=160)
         self.gen_btn.pack(side="left")
 
-        self.log2 = ctk.CTkTextbox(tab_html, height=260)
-        self.log2.grid(row=3, column=0, padx=6, pady=10, sticky="nsew")
+        self.code_card = ctk.CTkFrame(tab_html, fg_color=LIGHT_PANEL, corner_radius=10)
+        self.code_card.grid(row=3, column=0, sticky="nsew", padx=6, pady=10)
+        self.code_card.grid_columnconfigure(0, weight=1)
+        self.code_card.grid_rowconfigure(0, weight=1)
+
+        self.log2 = ctk.CTkTextbox(self.code_card)
+        self.log2.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
 
         copy_row = ctk.CTkFrame(tab_html, fg_color="transparent")
         copy_row.grid(row=4, column=0, sticky="w", padx=6, pady=(0, 10))
@@ -457,8 +477,23 @@ class App(ctk.CTk):
         self._refresh_ui()
         self._refresh_html_ui()
 
+        # --- DEBUG: veure què hi ha a tab_scrape ---
+        def _dump(parent, name="parent"):
+            print("\n=== DUMP", name, "===")
+            for w in parent.winfo_children():
+                cls = w.__class__.__name__
+                try:
+                    gi = w.grid_info()
+                except Exception:
+                    gi = {}
+                # només els que estan amb grid
+                if gi:
+                    print(f"- {cls:20s} row={gi.get('row')} col={gi.get('column')} sticky={gi.get('sticky')} -> {w}")
+
+        _dump(tab_scrape, "tab_scrape")
+
     # ====UI component helpers
-    def add_source_row(self, url_value: str = "", topic_value: str = "TFE", custom_topic_value: str = ""):
+    def add_source_row(self, url_value: str = "", topic_value: str = "Graus", custom_topic_value: str = ""):
         row_frame = ctk.CTkFrame(self.sources_list, fg_color="transparent")
         row_frame.pack(fill="x", padx=6, pady=6)
 
@@ -916,7 +951,6 @@ class App(ctk.CTk):
                 continue
             self._add_review_row(self.review_list, item)
 
-
     def _add_review_row(self, parent, item: FaqItem):
         row = ctk.CTkFrame(parent)
         row.pack(fill="x", pady=6, padx=6)
@@ -924,13 +958,40 @@ class App(ctk.CTk):
         cb = ctk.CTkCheckBox(row, text="", variable=item.approved_var)
         cb.grid(row=0, column=0, rowspan=2, padx=(8, 8), pady=8, sticky="n")
 
-        q = ctk.CTkLabel(row, text=item.question, anchor="w", justify="left", wraplength=700)
+        # Pregunta
+        q = ctk.CTkLabel(
+            row,
+            text=item.question,
+            anchor="w",
+            justify="left",
+            wraplength=780,  # una mica més ample perquè ara hi ha columna extra
+        )
         q.grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=(8, 2))
 
-        a = ctk.CTkLabel(row, text=item.answer, anchor="w", justify="left", wraplength=700, text_color="#4B5563")
+        # Resposta
+        a = ctk.CTkLabel(
+            row,
+            text=item.answer,
+            anchor="w",
+            justify="left",
+            wraplength=780,
+            text_color="#4B5563",
+        )
         a.grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(0, 8))
 
-        row.grid_columnconfigure(1, weight=1)
+        # Tema (columna petita a la dreta)
+        topic = ctk.CTkLabel(
+            row,
+            text=item.topic,
+            width=140,
+            anchor="e",
+            text_color="#6B7280",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        topic.grid(row=0, column=2, rowspan=2, padx=(6, 12), pady=8, sticky="ne")
+
+        row.grid_columnconfigure(1, weight=1)  # el text ocupa el que pot
+        row.grid_columnconfigure(2, weight=0)  # tema fixet
 
 
     def _approve_all(self):
@@ -971,6 +1032,51 @@ class App(ctk.CTk):
         except Exception as e:
             messagebox.showerror("Error", f"No s'ha pogut copiar: {e}")
 
+    def _style_tabview(self, tabview: ctk.CTkTabview):
+        tabview.configure(
+            fg_color=BG,
+
+            segmented_button_fg_color="#E5E7EB",
+            segmented_button_selected_color=UPC_BLUE_TAB,
+            segmented_button_selected_hover_color=UPC_BLUE_TAB,
+            segmented_button_unselected_color="#F3F4F6",
+            segmented_button_unselected_hover_color="#E5E7EB",
+
+            # IMPORTANT: aquí NO posem blanc, posem fosc perquè les no seleccionades es llegeixin
+            text_color="#111827",
+            text_color_disabled="#9CA3AF",
+        )
+
+        try:
+            sb = tabview._segmented_button
+            sb.configure(
+                corner_radius=12,
+                border_width=0,
+                height=38,
+                font=ctk.CTkFont(size=13, weight="bold"),
+
+                # Algunes versions permeten aquests camps i arreglen del tot el tema del text:
+                text_color="#111827",
+                text_color_disabled="#9CA3AF",
+            )
+        except Exception:
+            pass
+
+    def _fix_tab_text_colors(self, tabview: ctk.CTkTabview):
+        """Força colors de text: selected blanc, unselected fosc (per versions de CTk que ho liïn)."""
+        try:
+            sb = tabview._segmented_button
+            current = tabview.get()
+
+            # Posa totes fosques
+            for name, btn in sb._buttons_dict.items():
+                btn.configure(text_color="#111827")
+
+            # La seleccionada en blanc
+            if current in sb._buttons_dict:
+                sb._buttons_dict[current].configure(text_color="white")
+        except Exception:
+            pass
 
 # ENTRY POINT
 if __name__ == "__main__":
