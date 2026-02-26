@@ -5,3 +5,4 @@ gspread
 beautifulsoup4
 google-auth
 google-auth-oauthlib
+pytest
