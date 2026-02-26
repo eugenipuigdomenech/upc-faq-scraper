@@ -134,12 +134,7 @@ def read_rows_from_csv_like_sheets(path: str) -> List[Dict[str, str]]:
 
 # SCRAPING
 def scrape_faqs(url: str, log=None, debug: bool = False) -> List[Tuple[str, str]]:
-    """
-    Suporta:
-    1) UPC antic (collapse-base / data-toggle="collapse")
-    2) Bootstrap 5 accordion clàssic (accordion-item / accordion-body)
-    3) Nou format UPC/Plone amb #faqAccordion (button[data-bs-target="#cX"] + div.collapse#cX)
-    """
+
     def _log(m: str):
         if log:
             log(m)

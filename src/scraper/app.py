@@ -10,39 +10,39 @@ from PIL import Image
 from dataclasses import dataclass
 import hashlib
 
-# CONSTANTS DE CONFIGURACIÓ
-TOPICS_UI = ["Graus", "Masters", "TFE", "Mobilitat", "Empresa", "Acte de graduació"]
+# CONSTANTS DE CONFIGURACIO
+TOPICS_UI = ["Graus", "Masters", "TFE", "Mobilitat", "Empresa", "Acte de graduaci\u00f3"]
 OAUTH_HELP_TEXT = (
         "Com aconseguir oauth_client.json (Google OAuth):\n\n"
         "1) Ves a Google Cloud Console.\n"
-        "2) Crea un Projecte (o usa’n un existent).\n"
-        "3) APIs & Services → Library:\n"
+        "2) Crea un projecte (o usa'n un existent).\n"
+        "3) APIs & Services -> Library:\n"
         "   - Habilita Google Sheets API\n"
         "   - Habilita Google Drive API\n"
-        "4) APIs & Services → OAuth consent screen:\n"
+        "4) APIs & Services -> OAuth consent screen:\n"
         "   - Tipus: External (normalment)\n"
-        "   - Omple dades bàsiques\n"
-        "   - Afegeix el teu usuari com a Test user (si està en mode Testing)\n"
-        "5) APIs & Services → Credentials → Create credentials → OAuth client ID:\n"
+        "   - Omple dades b\u00e0siques\n"
+        "   - Afegeix el teu usuari com a Test user (si est\u00e0 en mode Testing)\n"
+        "5) APIs & Services -> Credentials -> Create credentials -> OAuth client ID:\n"
         "   - Application type: Desktop app\n"
-        "6) Descarrega el JSON i guarda’l com: oauth_client.json\n\n"
+        "6) Descarrega el JSON i guarda'l com: oauth_client.json\n\n"
         "Notes:\n"
-        "- La primera vegada que executis, s’obrirà el navegador per autoritzar.\n"
-        "- Es crearà un fitxer token.json al costat del programa (no el perdis)."
+        "- La primera vegada que executis, s'obrir\u00e0 el navegador per autoritzar.\n"
+        "- Es crear\u00e0 un fitxer token.json al costat del programa (no el perdis)."
     )
 FAQ_FORMAT_HELP_TEXT = (
-    "Quines pàgines puc extreure?\n\n"
-    "Aquest programa detecta automàticament aquests formats de FAQs:\n"
-    "• UPC antic: #collapse-base (enllaços que obren respostes)\n"
-    "• Bootstrap 5: .accordion-item / .accordion-body\n"
-    "• UPC/Plone nou: #faqAccordion (botons amb data-bs-target=\"#cX\")\n"
-    "• Genweb GW4: .accordion.accordion-gw4 (links open-accordionX + .accordion-content)\n\n"
-    "Si una pàgina té un format diferent, pot donar 0 resultats.\n"
+    "Quines p\u00e0gines puc extreure?\n\n"
+    "Aquest programa detecta autom\u00e0ticament aquests formats de FAQs:\n"
+    "- UPC antic: #collapse-base (enlla\u00e7os que obren respostes)\n"
+    "- Bootstrap 5: .accordion-item / .accordion-body\n"
+    "- UPC/Plone nou: #faqAccordion (botons amb data-bs-target=\"#cX\")\n"
+    "- Genweb GW4: .accordion.accordion-gw4 (links open-accordionX + .accordion-content)\n\n"
+    "Si una p\u00e0gina t\u00e9 un format diferent, pot donar 0 resultats.\n"
     "En aquest cas cal afegir un selector nou al scraper."
 )
     # Theme
 UPC_BLUE = "#0066A1"
-UPC_BLUE_TAB = "#1E7FBE"  # blau UPC més suau per tabs
+UPC_BLUE_TAB = "#1E7FBE"  # blau UPC mes suau per tabs
 BG = "#F5F6F8"
 LIGHT_PANEL = "#d2d5d9"
 TEXT_MUTED = "#4B5563"
@@ -59,7 +59,11 @@ class FaqItem:
 # HELPERS
 def resource_path(relative_path: str) -> str:
     """Retorna una ruta absoluta tant si s'executa en dev com si s'executa dins PyInstaller."""
-    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
+    if hasattr(sys, "_MEIPASS"):
+        base_path = sys._MEIPASS
+    else:
+        # Project root from this file (src/scraper/app.py -> project root)
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     return os.path.join(base_path, relative_path)
     # Windows taskbar icon (optional)
 try:
@@ -140,9 +144,9 @@ class App(ctk.CTk):
         self.input_mode = ctk.StringVar(value="ui")
         self.output_mode = ctk.StringVar(value="ui")
 
-        # Input CSV
-        # Input UI rows: each row = {"url_var": StringVar, "topic_var": StringVar, "frame": Frame}
-        self.source_rows = []
+        # Input UI grouped by topic
+        self.topic_groups = []
+        self.topic_seq = 0
 
         # Output file (csv)
         self.output_file_path = ctk.StringVar()
@@ -199,7 +203,7 @@ class App(ctk.CTk):
         body.grid_rowconfigure(0, weight=1)
 
         tabs = ctk.CTkTabview(body)
-        tabs.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 12))  # 👈 CANVIA row=1 → row=0
+        tabs.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 12))  # ðŸ‘ˆ CANVIA row=1 → row=0
         self._style_tabview(tabs)
         self.after(50, lambda: self._fix_tab_text_colors(tabs))
 
@@ -225,11 +229,11 @@ class App(ctk.CTk):
         self.in_card.grid_columnconfigure(0, weight=1)
 
         title_row = ctk.CTkFrame(self.in_card, fg_color="transparent")
-        title_row.grid(row=0, column=0, padx=12, pady=(10, 6), sticky="w")
+        title_row.grid(row=0, column=0, padx=12, pady=(10, 4), sticky="ew")
 
         title_label = ctk.CTkLabel(
             title_row,
-            text="Introdueix la URL de la pàgina d’on extreure les FAQs",
+            text="Introdueix la URL de la pàgina d'on extreure les FAQs",
             font=ctk.CTkFont(size=14, weight="bold")
         )
         title_label.pack(side="left")
@@ -237,25 +241,25 @@ class App(ctk.CTk):
 
         q = self._help_icon(title_row, FAQ_FORMAT_HELP_TEXT)
         q.pack(side="left", padx=(6, 0))
+        self.selection_summary_label = ctk.CTkLabel(title_row, text="")
+        self.selection_summary_label.pack(side="right")
+        self.topics_list = ctk.CTkFrame(self.in_card, fg_color="transparent", height=8)
+        self.topics_list.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 6))
+        # Controlem manualment l'alçada per evitar espais buits grans.
+        self.topics_list.grid_propagate(False)
+        self.topics_list.grid_columnconfigure(0, weight=1)
 
-        self.in_sources_row = ctk.CTkFrame(self.in_card, fg_color="transparent")
-        self.in_sources_row.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 10))
-        self.in_sources_row.grid_columnconfigure(0, weight=1)
-        self.sources_list = ctk.CTkFrame(self.in_sources_row, fg_color="transparent")
-        self.sources_list.grid(row=1, column=0, sticky="ew", padx=0, pady=0)
-        self.sources_list.grid_columnconfigure(0, weight=1)
+        actions_row = ctk.CTkFrame(self.in_card, fg_color="transparent")
+        actions_row.grid(row=2, column=0, sticky="w", padx=12, pady=(0, 8))
 
-        # Primera fila
-        self.add_source_row()
+        ctk.CTkButton(
+            actions_row,
+            text="Afegeix topic",
+            command=self.add_topic_group,
+            width=150
+        ).pack(side="left")
 
-        # Botó per afegir més URLs
-        self.add_url_btn = ctk.CTkButton(
-            self.in_sources_row,
-            text="Afegeix una nova URL",
-            command=self.add_source_row,
-            width=180
-        )
-        self.add_url_btn.grid(row=2, column=0, sticky="w", padx=6, pady=(0, 6))
+        self.add_topic_group(topic_name=TOPICS_UI[0], add_initial_url=True)
 
         # --- SORTIDA card ---
         self.out_card = ctk.CTkFrame(tab_scrape, fg_color=LIGHT_PANEL, corner_radius=10)
@@ -378,7 +382,7 @@ class App(ctk.CTk):
         card2.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
-            card2, text="Selecciona el fitxer revisat (agafarà només les faqs aprovades)",
+            card2, text="Selecciona el fitxer revisat (agafarà només les FAQs aprovades)",
             font=ctk.CTkFont(size=14, weight="bold")
         ).grid(row=0, column=0, columnspan=3, padx=12, pady=(10, 6), sticky="w")
 
@@ -468,7 +472,7 @@ class App(ctk.CTk):
 
         ctk.CTkButton(
             copy_row,
-            text="📋 Copiar tot el codi",
+            text="ðŸ“‹ Copiar tot el codi",
             command=self.copy_generated_code,
             width=180
         ).pack(side="left")
@@ -477,69 +481,224 @@ class App(ctk.CTk):
         self._refresh_ui()
         self._refresh_html_ui()
 
-        # --- DEBUG: veure què hi ha a tab_scrape ---
-        def _dump(parent, name="parent"):
-            print("\n=== DUMP", name, "===")
-            for w in parent.winfo_children():
-                cls = w.__class__.__name__
-                try:
-                    gi = w.grid_info()
-                except Exception:
-                    gi = {}
-                # només els que estan amb grid
-                if gi:
-                    print(f"- {cls:20s} row={gi.get('row')} col={gi.get('column')} sticky={gi.get('sticky')} -> {w}")
-
-        _dump(tab_scrape, "tab_scrape")
-
     # ====UI component helpers
-    def add_source_row(self, url_value: str = "", topic_value: str = "Graus", custom_topic_value: str = ""):
-        row_frame = ctk.CTkFrame(self.sources_list, fg_color="transparent")
-        row_frame.pack(fill="x", padx=6, pady=6)
+    def add_topic_group(self, topic_name: str = "", add_initial_url: bool = False):
+        self.topic_seq += 1
 
-        # 3 columnes: URL | desplegable | text lliure | (botó paperera a la dreta)
-        row_frame.grid_columnconfigure(0, weight=1)  # URL ample
-        row_frame.grid_columnconfigure(1, weight=0)  # dropdown fixed
-        row_frame.grid_columnconfigure(2, weight=0)  # custom topic ample
-        row_frame.grid_columnconfigure(3, weight=0)  # delete fixed
+        group_frame = ctk.CTkFrame(self.topics_list, fg_color="#E5E7EB", corner_radius=8)
+        group_frame.pack(fill="x", padx=6, pady=6)
+        # Evita alçades fixes grans dels CTkFrame i ajusta al contingut real.
+        group_frame.pack_propagate(True)
+        group_frame.grid_propagate(True)
+        group_frame.grid_columnconfigure(0, weight=1)
 
+        header = ctk.CTkFrame(group_frame, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 6))
+        header.grid_columnconfigure(2, weight=1)
+
+        expanded_var = ctk.BooleanVar(value=True)
+        selected_var = ctk.BooleanVar(value=True)
+        topic_var = ctk.StringVar(value=topic_name or f"Topic {self.topic_seq}")
+
+        toggle_btn = ctk.CTkButton(
+            header,
+            text="-",
+            width=28,
+            command=lambda: self.toggle_topic_group(group),
+        )
+        toggle_btn.grid(row=0, column=0, padx=(0, 6))
+
+        ctk.CTkCheckBox(
+            header,
+            text="",
+            variable=selected_var,
+            width=20,
+            command=lambda: self._on_topic_selected_changed(group),
+        ).grid(row=0, column=1, padx=(0, 6))
+
+        ctk.CTkEntry(header, textvariable=topic_var, placeholder_text="Nom del topic").grid(
+            row=0, column=2, sticky="ew", padx=(0, 8)
+        )
+
+        count_label = ctk.CTkLabel(header, text="0 URLs")
+        count_label.grid(row=0, column=3, padx=(0, 8))
+
+        ctk.CTkButton(
+            header,
+            text="+ URL",
+            width=70,
+            command=lambda: self.add_url_to_topic(group),
+        ).grid(row=0, column=4, padx=(0, 6))
+
+        ctk.CTkButton(
+            header,
+            text="X",
+            width=34,
+            fg_color="#B91C1C",
+            hover_color="#991B1B",
+            command=lambda: self.remove_topic_group(group_frame),
+        ).grid(row=0, column=5)
+
+        body = ctk.CTkFrame(group_frame, fg_color="transparent", height=1)
+        body.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+        body.grid_propagate(True)
+        body.grid_columnconfigure(0, weight=1)
+
+        urls_frame = ctk.CTkFrame(body, fg_color="transparent", height=1)
+        urls_frame.grid(row=0, column=0, sticky="ew")
+        urls_frame.grid_propagate(True)
+        urls_frame.grid_columnconfigure(1, weight=1)
+
+        group = {
+            "frame": group_frame,
+            "body": body,
+            "urls_frame": urls_frame,
+            "topic_var": topic_var,
+            "selected_var": selected_var,
+            "expanded_var": expanded_var,
+            "toggle_btn": toggle_btn,
+            "count_label": count_label,
+            "url_rows": [],
+        }
+        self.topic_groups.append(group)
+
+        if add_initial_url:
+            self.add_url_to_topic(group)
+
+        self._update_topic_count(group)
+        self._update_source_selection_summary()
+        return group
+
+    def toggle_topic_group(self, group):
+        is_open = group["expanded_var"].get()
+        if is_open:
+            group["body"].grid_remove()
+            group["toggle_btn"].configure(text="+")
+            group["expanded_var"].set(False)
+        else:
+            group["body"].grid()
+            group["toggle_btn"].configure(text="-")
+            group["expanded_var"].set(True)
+
+    def remove_topic_group(self, frame):
+        frame.destroy()
+        self.topic_groups = [g for g in self.topic_groups if g["frame"] != frame]
+        self._update_source_selection_summary()
+
+    def add_url_to_topic(self, group, url_value: str = ""):
+        row_frame = ctk.CTkFrame(group["urls_frame"], fg_color="transparent")
+        row_frame.pack(fill="x", pady=4)
+        row_frame.grid_columnconfigure(1, weight=1)
+
+        selected_var = ctk.BooleanVar(value=group["selected_var"].get())
         url_var = ctk.StringVar(value=url_value)
-        topic_var = ctk.StringVar(value=topic_value if topic_value in TOPICS_UI else TOPICS_UI[0])
-        custom_topic_var = ctk.StringVar(value=custom_topic_value)
 
-        # ---------- Labels (fila 0) ----------
-        ctk.CTkLabel(row_frame, text="URL").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        ctk.CTkCheckBox(
+            row_frame,
+            text="",
+            variable=selected_var,
+            width=20,
+            command=lambda: self._on_url_selected_changed(group),
+        ).grid(row=0, column=0, padx=(0, 6), sticky="w")
 
-        ctk.CTkLabel(row_frame, text="Tria el tòpic").grid(row=0, column=1, sticky="w", pady=(0, 4), padx=(8, 0))
+        ctk.CTkEntry(row_frame, textvariable=url_var, placeholder_text="https://...").grid(
+            row=0, column=1, sticky="ew", padx=(0, 8)
+        )
 
-        ctk.CTkLabel(row_frame, text="O escriu-lo aquí").grid(row=0, column=2, sticky="w", pady=(0, 4), padx=(8, 0))
+        ctk.CTkButton(
+            row_frame,
+            text="X",
+            width=34,
+            fg_color="#B91C1C",
+            hover_color="#991B1B",
+            command=lambda: self.remove_url_row(group, row_frame),
+        ).grid(row=0, column=2)
 
-        # (col 3 és la paperera, no cal label)
-
-        # ---------- Inputs (fila 1) ----------
-        url_entry = ctk.CTkEntry(row_frame, textvariable=url_var, placeholder_text="https://...")
-        url_entry.grid(row=1, column=0, sticky="ew", padx=(0, 8))
-
-        topic_menu = ctk.CTkOptionMenu(row_frame, values=TOPICS_UI, variable=topic_var, width=190)
-        topic_menu.grid(row=1, column=1, sticky="w", padx=(0, 8))
-
-        custom_entry = ctk.CTkEntry(row_frame, textvariable=custom_topic_var, placeholder_text="Tòpic personalitzat")
-        custom_entry.grid(row=1, column=2, sticky="ew", padx=(0, 8))
-
-        del_btn = ctk.CTkButton(row_frame, text="🗑️", width=44, command=lambda: self.remove_source_row(row_frame))
-        del_btn.grid(row=1, column=3, sticky="e")
-
-        self.source_rows.append({
+        group["url_rows"].append({
             "frame": row_frame,
             "url_var": url_var,
-            "topic_var": topic_var,
-            "custom_topic_var": custom_topic_var,
+            "selected_var": selected_var,
         })
-    def remove_source_row(self, frame):
-        # Elimina de UI
+
+        self._update_topic_count(group)
+        self._update_source_selection_summary()
+
+    def remove_url_row(self, group, frame):
         frame.destroy()
-        # Elimina de estado
-        self.source_rows = [r for r in self.source_rows if r["frame"] != frame]
+        group["url_rows"] = [r for r in group["url_rows"] if r["frame"] != frame]
+        self._sync_topic_with_children(group)
+        self._update_topic_count(group)
+        self._update_source_selection_summary()
+
+    def _on_topic_selected_changed(self, group):
+        selected = group["selected_var"].get()
+        for row in group["url_rows"]:
+            row["selected_var"].set(selected)
+        self._update_topic_count(group)
+        self._update_source_selection_summary()
+
+    def _on_url_selected_changed(self, group):
+        self._sync_topic_with_children(group)
+        self._update_topic_count(group)
+        self._update_source_selection_summary()
+
+    def _sync_topic_with_children(self, group):
+        rows = group["url_rows"]
+        if not rows:
+            return
+        any_selected = any(r["selected_var"].get() for r in rows)
+        group["selected_var"].set(any_selected)
+
+    def _update_topic_count(self, group):
+        total = len(group["url_rows"])
+        selected = sum(1 for r in group["url_rows"] if r["selected_var"].get())
+        group["count_label"].configure(text=f"{selected}/{total} URLs")
+
+    def _update_source_selection_summary(self):
+        total_topics = len(self.topic_groups)
+        selected_topics = sum(1 for g in self.topic_groups if g["selected_var"].get())
+
+        total_urls = 0
+        selected_urls = 0
+        for g in self.topic_groups:
+            self._update_topic_count(g)
+            total_urls += len(g["url_rows"])
+            selected_urls += sum(1 for r in g["url_rows"] if r["selected_var"].get())
+
+        msg = f"Seleccionat: {selected_topics}/{total_topics} topics, {selected_urls}/{total_urls} URLs"
+
+        if hasattr(self, "selection_summary_label"):
+            self.selection_summary_label.configure(text=msg)
+        self._refresh_topics_list_height()
+
+    def _refresh_topics_list_height(self):
+        if not hasattr(self, "topics_list"):
+            return
+
+        if not self.topic_groups:
+            self.topics_list.configure(height=8)
+            return
+
+        estimated_height = 0
+        for g in self.topic_groups:
+            # Header topic
+            estimated_height += 54
+
+            # Cos amb URLs (només si expandit)
+            if g["expanded_var"].get():
+                url_count = len(g["url_rows"])
+                if url_count > 0:
+                    estimated_height += url_count * 44
+                else:
+                    estimated_height += 4
+
+            # Marges del grup
+            estimated_height += 18
+
+        # Manté compacte però evita que rebenti tota la pantalla.
+        estimated_height = max(8, min(estimated_height, 420))
+        self.topics_list.configure(height=estimated_height)
+
     def _help_icon(self, parent, text):
         icon = ctk.CTkLabel(
             parent,
@@ -703,7 +862,7 @@ class App(ctk.CTk):
         # INPUT (UI rows)
         sources = self.get_sources_from_ui()
         if not sources:
-            return False, "Afegeix almenys una URL vàlida a l’entrada."
+            return False, "Afegeix almenys una URL vàlida a l'entrada."
 
         # OUTPUT
         mode = self.output_mode.get()
@@ -721,10 +880,9 @@ class App(ctk.CTk):
                 return False, "Omple el títol del Google Sheet."
             if not self.output_sheet_tab.get().strip():
                 return False, "Omple el nom de la pestanya."
-
-        # OAuth files
-        def _needs_oauth(self) -> bool:
-            return self.output_mode.get() == "sheets_oauth"
+            oauth_file = self.oauth_client_json.get().strip() or "oauth_client.json"
+            if not os.path.exists(oauth_file):
+                return False, f"Falta el fitxer OAuth: {oauth_file}"
 
         return True, ""
 
@@ -865,7 +1023,7 @@ class App(ctk.CTk):
                 if not approved_rows:
                     raise RuntimeError("No hi ha cap FAQ aprovada a la pestanya 2.")
 
-                # 👇 ARA cridem una funció nova de core
+                # ðŸ‘‡ ARA cridem una funció nova de core
                 html_text = core.approved_rows_to_html(approved_rows, log=self.ui_log2)
 
                 self.after(0, lambda: self._show_generated_code(html_text))
@@ -887,7 +1045,7 @@ class App(ctk.CTk):
 
         except Exception as e:
             msg = str(e)
-            self.ui_log2(f"❌ Error: {msg}")
+            self.ui_log2(f"Error: {msg}")
             self.after(0, lambda: messagebox.showerror("Error", msg))
         finally:
             self.after(0, lambda: self.gen_btn.configure(state="normal"))
@@ -895,20 +1053,24 @@ class App(ctk.CTk):
     # ====Data extraction from UI
     def get_sources_from_ui(self):
         out = []
-        for r in self.source_rows:
-            url = (r["url_var"].get() or "").strip()
-            if not url:
+
+        for g in self.topic_groups:
+            topic = (g["topic_var"].get() or "").strip() or TOPICS_UI[0]
+            topic_selected = g["selected_var"].get()
+            if not topic_selected:
                 continue
-            if not (url.startswith("http://") or url.startswith("https://")):
-                continue
 
-            custom = (r.get("custom_topic_var").get() or "").strip()
-            topic = custom if custom else (r["topic_var"].get() or "").strip()
+            for r in g["url_rows"]:
+                url = (r["url_var"].get() or "").strip()
+                if not url:
+                    continue
+                if not (url.startswith("http://") or url.startswith("https://")):
+                    continue
+                if not r["selected_var"].get():
+                    continue
 
-            if not topic:
-                topic = TOPICS_UI[0]
+                out.append((url, topic))
 
-            out.append((url, topic))
         return out
 
     def _build_tab_review(self, parent):
@@ -1081,3 +1243,4 @@ class App(ctk.CTk):
 # ENTRY POINT
 if __name__ == "__main__":
     App().mainloop()
+

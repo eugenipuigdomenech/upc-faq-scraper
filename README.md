@@ -1,239 +1,90 @@
-# 📚 UPC FAQ Scraper
+# UPC FAQ Scraper
 
-Aplicació d’escriptori desenvolupada amb Python + CustomTkinter per:
+Eina d'escriptori en Python per:
+- capturar FAQs des de multiples URLs,
+- revisar i aprovar FAQs des de la UI,
+- exportar a CSV o Google Sheets,
+- generar HTML final per enganxar a Genweb.
 
-🔎 Fer scraping de FAQs (Preguntes Més Freqüents) des de múltiples URLs
+## Estat actual
 
-📄 Exportar resultats a CSV
+Aquest projecte usa:
+- UI amb `customtkinter`,
+- scraping amb `requests` + `beautifulsoup4`,
+- integracio Google Sheets via OAuth amb `gspread`.
 
-☁️ Exportar directament a Google Sheets (via OAuth)
+## Estructura del projecte
 
-🧩 Exportar en format JSON compatible amb Genweb
+```text
+Scraper/
+  assets/                    # Logo i icona de l'app
+  src/
+    scraper/
+      app.py                 # UI principal
+      core.py                # Logica de scraping/exportacio/render HTML
+  tests/                     # Fitxers de prova / recursos
+  requirements.txt
+  .gitignore
+  README.md
+```
 
-Pensada per facilitar la recopilació i estructuració de FAQs de manera automatitzada.
+## Requisits
 
-## 🚀 Funcionalitats
+- Python 3.11+ (recomanat)
+- Windows 10/11 (testejat principalment en Windows)
 
-✅ Lectura de múltiples URLs des d’un CSV
-✅ Detecció automàtica de diferents formats d’acordions (UPC antic + Bootstrap 5)
-✅ Exportació estructurada amb:
-- Tema
-- Pregunta
-- Resposta
-- Esta
-- Dates
-- Font
+## Instal·lacio
 
-✅ Login segur amb Google (OAuth)
-
-✅ Generació d’executable .exe per Windows
-
-## 🖥️ Requisits
-
-Windows 10 / 11
-
-Python 3.11 o superior (recomanat)
-
-Connexió a Internet
-
-## 📦 Instal·lació del projecte
-
-1️⃣ Clonar repositori
-git clone <REPO_URL>
-cd upc-faq-scraper
-
-2️⃣ Crear entorn virtual (recomanat)
+```powershell
 py -m venv .venv
 .\.venv\Scripts\activate
-
-3️⃣ Instal·lar dependències
+py -m pip install --upgrade pip
 py -m pip install -r requirements.txt
+```
 
-▶️ Executar l’aplicació
-py app.py
+## Executar l'aplicacio
 
-## 📥 Format del CSV d’entrada
+Des de l'arrel del projecte:
 
-El CSV pot tenir:
-- Capçalera
-- No capçalera
-- Separador , o ;
+```powershell
+py src\scraper\app.py
+```
 
-## ✅ Format recomanat
+## Flux funcional
 
-URL,topic
-https://eseiaat.upc.edu/ca/.../preguntes-frequents,tfe
-https://www.upc.edu/ca/graus/faqs/preus-reduccions-pagaments,preus
+1. Afegeixes topics.
+2. Afegeixes URLs dins de cada topic.
+3. Fas scraping.
+4. Revisions i aprovacions a la pestanya UI.
+5. Exportes:
+   - CSV,
+   - Google Sheets,
+   - HTML final per Genweb.
 
-Columna 1 → URL
-Columna 2 → Tema
+## Google Sheets (OAuth)
 
-## 📤 Formats de sortida
+Si vols exportar a Google Sheets:
 
-1️⃣ CSV
+1. Crea un OAuth Client ID de tipus Desktop a Google Cloud.
+2. Descarrega el JSON i selecciona'l des de la UI (`oauth_client.json`).
+3. A la primera execucio es demanara login al navegador i es generara `token.json`.
 
-- Genera fitxer amb separador ;
-- Compatible amb Excel en entorn ES/CA
-  
-Columnes generades:
-| Tema | Pregunta | Resposta | Estat | Data creació | Darrera modificació | Persona darrera modificació | Dades amb actualització anual | Font |
+No pugis mai aquests fitxers al repositori.
 
-2️⃣ JSON (Genweb)
+## Build EXE (opcional)
 
-Estructura:
-[
-  {
-    "topic": "tfe",
-    "source_url": "https://...",
-    "items": [
-      {"q": "Pregunta?", "a": "Resposta"}
-    ]
-  }
-]
-
-3️⃣ Google Sheets (OAuth)
-
-Permet escriure directament en un Spreadsheet.
-
-Si no existeix:
-Es crea automàticament.
-
-Si no existeix la pestanya:
-També es crea automàticament.
-
-## 🔐 Connexió amb Google Sheets (OAuth) — PAS A PAS
-
-Aquesta aplicació utilitza OAuth Desktop App Login.
-
-### 🥇 PAS 1 — Crear credencials a Google Cloud
-
-Ves a: https://console.cloud.google.com
-
-Crea un projecte nou
-
-Activa:
-
-Google Sheets API
-
-Google Drive API
-
-Ves a:
-
-APIs & Services → Credentials
-
-Clica:
-
-Create Credentials → OAuth Client ID
-
-Tipus:
-
-Desktop application
-
-Descarrega el JSON
-
-Guarda’l com:
-
-oauth_client.json
-
-
-⚠️ Aquest fitxer NO s’ha de pujar a GitHub.
-
-### 🥈 PAS 2 — Seleccionar el fitxer a l’app
-
-A l’aplicació:
-
-Prem "Explora…"
-
-Selecciona el teu oauth_client.json
-
-
-### 🥉 PAS 3 — Primera execució
-
-Quan premis "Executa":
-
-S’obrirà el navegador
-
-Iniciaràs sessió amb Google
-
-Acceptaràs permisos
-
-Es crearà automàticament:
-
-token.json
-
-Aquest fitxer guarda la sessió.
-
-## 🔁 Si vols forçar nou login
-
-Esborra:
-token.json
-i torna a executar.
-
-## 🛠️ Crear executable (.exe)
-
-1️⃣ Instal·lar PyInstaller
+```powershell
 py -m pip install pyinstaller
+py -m PyInstaller --noconfirm --clean --onefile --windowed --name "UPC_FAQ_Scraper" --icon=assets\upc_logo.ico --add-data "assets;assets" src\scraper\app.py
+```
 
-2️⃣ Tancar qualsevol exe obert
-Si l’exe està obert, PyInstaller fallarà amb:
-PermissionError: [WinError 5] Access Denied
-Tanca’l abans de compilar.
+Sortida esperada:
+- `dist\UPC_FAQ_Scraper.exe`
 
-3️⃣ Netejar build anterior (recomanat)
-rmdir build /s /q
-rmdir dist /s /q
-del *.spec
+## Bones practiques aplicades
 
-4️⃣ Crear EXE
+- Codi dins de `src/`
+- Secrets ignorats a `.gitignore`
+- Entorn virtual local
+- `README` amb setup i flux clar
 
-Executar en una sola línia:
-py -m PyInstaller --noconfirm --clean --onefile --windowed --name "UPC_FAQ_Scraper" --icon=assets\upc_logo.ico --add-data "assets;assets" app.py
-
-## 📂 Resultat
-
-L’executable es genera a:
-dist\UPC_FAQ_Scraper.exe
-
-## 🧠 Errors comuns i solucions
-
-❌ SpreadsheetNotFound: <Response [200]>
-
-Estàs logat amb un altre compte
-El sheet no existeix
-El token és antic
-Solució:
-Esborra token.json
-Executa de nou
-Loga’t amb el compte correcte
-
-❌ L’Spreadsheet es crea però està buit
-
-Revisa:
-Estàs mirant la pestanya correcta?
-Google pot haver creat FAQs (1)
-Mira les pestanyes inferiors
-
-❌ Access Denied al crear exe
-
-L’exe està obert
-Defender el bloqueja
-No tens permisos
-Solució:
-Tanca l’exe
-Torna a compilar
-
-## 🧩 Arquitectura simplificada
-
-app.py       → Interfície gràfica
-core.py      → Lògica de scraping i exportació
-assets/      → Icones i imatges
-
-Flux:
-CSV → Scraping → Build rows → Export (CSV / Sheets / JSON)
-
-## 📌 Bones pràctiques
-
-No versionar secrets
-Fer servir entorn virtual
-Netejar build abans de generar exe
-Esborrar token.json si hi ha problemes de login
