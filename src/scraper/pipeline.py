@@ -108,6 +108,7 @@ def run_pipeline(
     token_file: str = "token.json",
     log=None,
     debug: bool = False,
+    progress_cb=None,
 ):
     def _log(m: str):
         if log:
@@ -127,7 +128,9 @@ def run_pipeline(
     if not sources:
         raise RuntimeError("No s'han trobat URLs. Afegeix almenys una URL.")
 
-    rows, blocks, stats, errors = build_outputs(sources, log=log, debug=debug)
+    rows, blocks, stats, errors = build_outputs(
+        sources, log=log, debug=debug, progress_cb=progress_cb
+    )
 
     if output_mode == "csv":
         if not output_file_path:

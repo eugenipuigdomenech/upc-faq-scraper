@@ -265,7 +265,7 @@ def scrape_faqs(url: str, log=None, debug: bool = False) -> List[Tuple[str, str]
 
 
 def build_outputs(
-    sources: List[Tuple[str, str]], log=None, debug: bool = False
+    sources: List[Tuple[str, str]], log=None, debug: bool = False, progress_cb=None
 ) -> Tuple[List[List[str]], List[Dict[str, Any]], Dict[str, int], List[Dict[str, str]]]:
     def _log(m: str):
         if log:
@@ -323,6 +323,12 @@ def build_outputs(
             _log(f"⚠️ Error processing URL: {url}")
             _log(f"    → {err}")
             genweb_blocks.append({"topic": topic, "source_url": url, "items": []})
+        finally:
+            if progress_cb:
+                try:
+                    progress_cb(i, len(sources), url)
+                except Exception:
+                    pass
 
     stats = {
         "total_urls": len(sources),

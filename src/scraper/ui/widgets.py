@@ -79,7 +79,8 @@ def file_row(
         qbtn = help_icon(label_frame, tooltip_text, icon_color)
         qbtn.pack(side="left", padx=(6, 0))
 
-    ctk.CTkEntry(parent, textvariable=var).grid(row=row, column=1, padx=6, pady=10, sticky="ew")
+    entry = ctk.CTkEntry(parent, textvariable=var)
+    entry.grid(row=row, column=1, padx=6, pady=10, sticky="ew")
 
     def browse():
         if save:
@@ -95,9 +96,12 @@ def file_row(
     ctk.CTkButton(parent, text=button_text, width=110, command=browse).grid(
         row=row, column=2, padx=6, pady=10
     )
+    return entry
 
 
 def text_row(parent, row, label, var):
     ctk.CTkLabel(parent, text=label).grid(row=row, column=0, padx=10, pady=6, sticky="w")
-    ctk.CTkEntry(parent, textvariable=var).grid(row=row, column=1, padx=6, pady=6, sticky="ew")
+    entry = ctk.CTkEntry(parent, textvariable=var)
+    entry.grid(row=row, column=1, padx=6, pady=6, sticky="ew")
     ctk.CTkLabel(parent, text="").grid(row=row, column=2, padx=6, pady=6)
+    return entry

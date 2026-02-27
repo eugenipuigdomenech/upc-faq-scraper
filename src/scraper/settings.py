@@ -30,8 +30,8 @@ FAQ_FORMAT_HELP_TEXT = (
     "En aquest cas cal afegir un selector nou al scraper."
 )
 
-UPC_BLUE = "#0066A1"
-UPC_BLUE_TAB = "#1E7FBE"
-BG = "#F5F6F8"
-LIGHT_PANEL = "#d2d5d9"
+UPC_BLUE = "#0079BF"
+UPC_BLUE_TAB = "#006EAD"
+BG = "#FFFFFF"
+LIGHT_PANEL = "#C9D3E2"
 TEXT_MUTED = "#4B5563"
