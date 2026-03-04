@@ -535,6 +535,13 @@ class App(ctk.CTk):
             width=260,
         )
         self.gen_btn.pack(side="left")
+        self.show_code_btn = ctk.CTkButton(
+            btns2,
+            text="Mostrar el codi font",
+            command=self.show_source_code_clicked,
+            width=180,
+        )
+        self.show_code_btn.pack(side="left", padx=(8, 0))
 
         self.code_card = ctk.CTkFrame(tab_html, fg_color=LIGHT_PANEL, corner_radius=10)
         self.code_card.grid(row=3, column=0, sticky="nsew", padx=6, pady=10)
@@ -1468,11 +1475,34 @@ class App(ctk.CTk):
             messagebox.showerror("Error", err)
             return
 
-        self.gen_btn.configure(state="disabled")
+        self._set_export_buttons_enabled(False)
         self.ui_log2(f"\n> Executant ({self.html_input_mode.get()})...")
 
         t = threading.Thread(target=self._generate_html_background, daemon=True)
         t.start()
+
+    def show_source_code_clicked(self):
+        ok, err = self.validate_html_inputs()
+        if not ok:
+            messagebox.showerror("Error", err)
+            return
+
+        self._set_export_buttons_enabled(False)
+        self.ui_log2(f"\n> Generant codi font ({self.html_input_mode.get()})...")
+
+        t = threading.Thread(target=self._show_source_code_background, daemon=True)
+        t.start()
+
+    def _set_export_buttons_enabled(self, enabled: bool):
+        state = "normal" if enabled else "disabled"
+        try:
+            self.gen_btn.configure(state=state)
+        except Exception:
+            pass
+        try:
+            self.show_code_btn.configure(state=state)
+        except Exception:
+            pass
 
     def _reset_ui(self):
         self.progress.configure(mode="determinate")
@@ -1627,7 +1657,38 @@ class App(ctk.CTk):
             self.ui_log2(f"Error: {msg}")
             self.after(0, lambda: messagebox.showerror("Error", msg))
         finally:
-            self.after(0, lambda: self.gen_btn.configure(state="normal"))
+            self.after(0, lambda: self._set_export_buttons_enabled(True))
+
+    def _show_source_code_background(self):
+        try:
+            mode = self.html_input_mode.get()
+
+            if mode == "ui":
+                approved_rows = self._get_approved_rows()
+                if not approved_rows:
+                    raise RuntimeError("No hi ha cap FAQ aprovada a la pestanya 2.")
+                html_text = core.approved_rows_to_html(approved_rows, log=self.ui_log2)
+                self.after(0, lambda: self._show_generated_code(html_text))
+                return
+
+            result = core.run_approved_to_html_pipeline(
+                input_mode=mode,
+                input_csv_path=self.html_input_csv_path.get().strip() if mode == "csv" else None,
+                sheet_title=self.html_sheet_title.get().strip() if mode == "sheets_oauth" else None,
+                sheet_tab=self.html_sheet_tab.get().strip() if mode == "sheets_oauth" else None,
+                oauth_client_json=self.oauth_client_json.get().strip() or "oauth_client.json",
+                token_file=self.token_file.get().strip() or "token.json",
+                log=self.ui_log2,
+            )
+            html_text = result.get("html_text", "") if isinstance(result, dict) else ""
+            self.after(0, lambda: self._show_generated_code(html_text))
+
+        except Exception as e:
+            msg = str(e)
+            self.ui_log2(f"Error: {msg}")
+            self.after(0, lambda: messagebox.showerror("Error", msg))
+        finally:
+            self.after(0, lambda: self._set_export_buttons_enabled(True))
 
     # ====Data extraction from UI
     # EXTRACCIO DE DADES DES DE LA UI

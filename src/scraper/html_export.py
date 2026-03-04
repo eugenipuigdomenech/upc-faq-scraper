@@ -2,13 +2,42 @@ import html
 from typing import Dict, List
 from bs4 import BeautifulSoup
 import re
+import unicodedata
+
+
+def _normalize_text(value: str) -> str:
+    txt = (value or "").strip().lower()
+    if not txt:
+        return ""
+    txt = unicodedata.normalize("NFKD", txt)
+    txt = "".join(ch for ch in txt if not unicodedata.combining(ch))
+    return txt
+
+
+def _get_row_value_case_insensitive(row: Dict[str, str], wanted_key: str) -> str:
+    wanted = _normalize_text(wanted_key)
+    for k, v in row.items():
+        if _normalize_text(k) == wanted:
+            return v or ""
+    return ""
 
 
 def filter_approved(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    approved_values = {"aprobat", "aprovada", "approved"}
+    approved_values = {
+        "aprovat",
+        "aprovada",
+        "aprovat/da",
+        "aprobat",
+        "approved",
+        "ok",
+        "si",
+        "yes",
+        "true",
+        "1",
+    }
     out = []
     for r in rows:
-        estat = (r.get("Estat") or r.get("estat") or "").strip().lower()
+        estat = _normalize_text(_get_row_value_case_insensitive(r, "estat"))
         if estat in approved_values:
             out.append(r)
     return out
