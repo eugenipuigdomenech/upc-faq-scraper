@@ -158,14 +158,15 @@ def export_rows_to_google_sheets_oauth(
         s = (s or "").replace("\u00a0", " ")
         return re.sub(r"\s+", " ", s).strip()
 
-    def _qkey(row: List[str]) -> tuple[str, str, str]:
+    def _qkey(row: List[str]) -> tuple[str, str, str, str]:
         topic = _norm(row[0]) if len(row) > 0 else ""
-        pregunta = _norm(row[1]) if len(row) > 1 else ""
-        font = _norm(row[8]) if len(row) > 8 else ""
-        return (topic, pregunta, font)
+        subtopic = _norm(row[1]) if len(row) > 1 else ""
+        pregunta = _norm(row[2]) if len(row) > 2 else ""
+        font = _norm(row[9]) if len(row) > 9 else ""
+        return (topic, subtopic, pregunta, font)
 
     def _ans(row: List[str]) -> str:
-        return _norm(row[2]) if len(row) > 2 else ""
+        return _norm(row[3]) if len(row) > 3 else ""
 
     def _html_to_sheet_text(value: str) -> str:
         text = (value or "").strip()
@@ -216,6 +217,210 @@ def export_rows_to_google_sheets_oauth(
         rendered = re.sub(r" *\n *", "\n", rendered)
         return rendered.strip()
 
+    def _ensure_status_default(value: str) -> str:
+        v = (value or "").strip()
+        return v if v in {"Aprovat", "Pendent", "Rebutjat"} else "Pendent"
+
+    def _ensure_status_options_range(spreadsheet) -> str:
+        """
+        Garanteix una pestanya 'Familes' amb el catàleg d'estats a B2:B4
+        per poder fer validació 'Menú desplegable (d'un interval)'.
+        """
+        try:
+            ws_ref = spreadsheet.worksheet("Familes")
+        except Exception:
+            ws_ref = spreadsheet.add_worksheet(title="Familes", rows=20, cols=5)
+
+        ws_ref.update(
+            "B1:B4",
+            [["Estat"], ["Aprovat"], ["Pendent"], ["Rebutjat"]],
+            value_input_option="RAW",
+        )
+        return "='Familes'!$B$2:$B$4"
+
+    def _apply_review_sheet_formatting(worksheet):
+        sheet_id = worksheet.id
+        row_count = max(2, int(getattr(worksheet, "row_count", 1000) or 1000))
+        col_count = max(len(SHEETS_COLUMNS), int(getattr(worksheet, "col_count", len(SHEETS_COLUMNS)) or len(SHEETS_COLUMNS)))
+
+        # Neteja regles de format condicional existents d'aquesta pestanya per evitar duplicats.
+        try:
+            meta = worksheet.spreadsheet.fetch_sheet_metadata()
+            for sh_meta in meta.get("sheets", []):
+                props = sh_meta.get("properties", {})
+                if props.get("sheetId") != sheet_id:
+                    continue
+                rules = sh_meta.get("conditionalFormats", []) or []
+                if rules:
+                    delete_reqs = [
+                        {
+                            "deleteConditionalFormatRule": {
+                                "sheetId": sheet_id,
+                                "index": idx,
+                            }
+                        }
+                        for idx in range(len(rules) - 1, -1, -1)
+                    ]
+                    worksheet.spreadsheet.batch_update({"requests": delete_reqs})
+                break
+        except Exception:
+            pass
+
+        requests = [
+            {
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": sheet_id,
+                        "gridProperties": {"frozenRowCount": 1},
+                    },
+                    "fields": "gridProperties.frozenRowCount",
+                }
+            },
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": 0,
+                        "endRowIndex": 1,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": col_count,
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "textFormat": {"bold": True},
+                        }
+                    },
+                    "fields": "userEnteredFormat.textFormat.bold",
+                }
+            },
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": 1,
+                        "endRowIndex": row_count,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": col_count,
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "horizontalAlignment": "LEFT",
+                            "verticalAlignment": "TOP",
+                        }
+                    },
+                    "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment",
+                }
+            },
+        ]
+
+        status_range_formula = _ensure_status_options_range(worksheet.spreadsheet)
+        requests.extend(
+            [
+                {
+                    "setDataValidation": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": 1,
+                            "endRowIndex": row_count,
+                            "startColumnIndex": 4,
+                            "endColumnIndex": 5,
+                        },
+                        "rule": {
+                            "condition": {
+                                "type": "ONE_OF_RANGE",
+                                "values": [{"userEnteredValue": status_range_formula}],
+                            },
+                            "strict": True,
+                            "showCustomUi": True,
+                        },
+                    }
+                },
+                {
+                    "addConditionalFormatRule": {
+                        "index": 0,
+                        "rule": {
+                            "ranges": [
+                                {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": 1,
+                                    "endRowIndex": row_count,
+                                    "startColumnIndex": 4,
+                                    "endColumnIndex": 5,
+                                }
+                            ],
+                            "booleanRule": {
+                                "condition": {
+                                    "type": "TEXT_EQ",
+                                    "values": [{"userEnteredValue": "Aprovat"}],
+                                },
+                                "format": {
+                                    "textFormat": {
+                                        "foregroundColor": {"red": 0.10, "green": 0.50, "blue": 0.10}
+                                    }
+                                },
+                            },
+                        },
+                    }
+                },
+                {
+                    "addConditionalFormatRule": {
+                        "index": 1,
+                        "rule": {
+                            "ranges": [
+                                {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": 1,
+                                    "endRowIndex": row_count,
+                                    "startColumnIndex": 4,
+                                    "endColumnIndex": 5,
+                                }
+                            ],
+                            "booleanRule": {
+                                "condition": {
+                                    "type": "TEXT_EQ",
+                                    "values": [{"userEnteredValue": "Pendent"}],
+                                },
+                                "format": {
+                                    "textFormat": {
+                                        "foregroundColor": {"red": 0.65, "green": 0.50, "blue": 0.00}
+                                    }
+                                },
+                            },
+                        },
+                    }
+                },
+                {
+                    "addConditionalFormatRule": {
+                        "index": 2,
+                        "rule": {
+                            "ranges": [
+                                {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": 1,
+                                    "endRowIndex": row_count,
+                                    "startColumnIndex": 4,
+                                    "endColumnIndex": 5,
+                                }
+                            ],
+                            "booleanRule": {
+                                "condition": {
+                                    "type": "TEXT_EQ",
+                                    "values": [{"userEnteredValue": "Rebutjat"}],
+                                },
+                                "format": {
+                                    "textFormat": {
+                                        "foregroundColor": {"red": 0.75, "green": 0.12, "blue": 0.12}
+                                    }
+                                },
+                            },
+                        },
+                    }
+                },
+            ]
+        )
+
+        worksheet.spreadsheet.batch_update({"requests": requests})
+
     client = get_oauth_client(oauth_client_json=oauth_client_json, token_file=token_file)
 
     try:
@@ -244,12 +449,12 @@ def export_rows_to_google_sheets_oauth(
         _log("Capçalera afegida")
         values = [SHEETS_COLUMNS]
 
-    first_created: dict[tuple[str, str, str], str] = {}
-    existing_answers: dict[tuple[str, str, str], set[str]] = {}
+    first_created: dict[tuple[str, str, str, str], str] = {}
+    existing_answers: dict[tuple[str, str, str, str], set[str]] = {}
 
     for r in values[1:]:
         k = _qkey(r)
-        created = (r[4] if len(r) > 4 else "").strip()
+        created = (r[5] if len(r) > 5 else "").strip()
         if created and k not in first_created:
             first_created[k] = created
 
@@ -263,13 +468,15 @@ def export_rows_to_google_sheets_oauth(
 
     for r in rows:
         rr = r.copy()
-        if len(rr) > 2:
-            rr[2] = _html_to_sheet_text(rr[2])
+        if len(rr) > 3:
+            rr[3] = _html_to_sheet_text(rr[3])
+        if len(rr) > 4:
+            rr[4] = _ensure_status_default(rr[4])
         k = _qkey(rr)
         a = _ans(rr)
 
-        rr[4] = first_created.get(k, rr[4] or now_ts)
-        rr[5] = now_ts
+        rr[5] = first_created.get(k, rr[5] or now_ts)
+        rr[6] = now_ts
 
         seen = existing_answers.setdefault(k, set())
         if a in seen:
@@ -293,6 +500,12 @@ def export_rows_to_google_sheets_oauth(
     except Exception:
         # Fallback per pestanyes antigues amb menys columnes.
         ws.update_acell("I1", f"LAST_WRITE: {now_ts}")
+
+    try:
+        _apply_review_sheet_formatting(ws)
+        _log("Format aplicat: capçalera fixa+negreta, desplegable d'estat i colors.")
+    except Exception as e:
+        _log(f"No s'ha pogut aplicar el format visual de la pestanya: {_format_google_error(e)}")
 
 
 def read_rows_from_sheets_oauth(

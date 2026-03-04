@@ -350,10 +350,14 @@ def build_outputs(
                     group_title, pregunta, resposta = faq  # type: ignore[misc]
                 else:
                     pregunta, resposta = faq  # type: ignore[misc]
-                row_topic = (group_title or topic).strip()
+                parent_topic = (topic or "").strip() or "Sense topic"
+                subtopic = (group_title or "").strip()
+                if subtopic == parent_topic:
+                    subtopic = ""
                 out_rows.append(
                     [
-                        row_topic,
+                        parent_topic,
+                        subtopic,
                         pregunta.strip(),
                         resposta.strip(),
                         estat_default,
@@ -366,7 +370,8 @@ def build_outputs(
                 )
                 block_items.append(
                     {
-                        "topic": row_topic,
+                        "topic": parent_topic,
+                        "subtopic": subtopic,
                         "q": pregunta.strip(),
                         "a": resposta.strip(),
                     }

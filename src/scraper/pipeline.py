@@ -1,4 +1,4 @@
-import csv
+﻿import csv
 import json
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -141,10 +141,9 @@ def run_pipeline(
         if not output_file_path:
             raise RuntimeError("Falta el fitxer JSON de sortida.")
         export_genweb_json(blocks, output_file_path)
-        _log(f"Genweb JSON written: {output_file_path}")
-    elif output_mode == "sheets_oauth":
+        _log(f"Genweb JSON written: {output_file_path}")    elif output_mode == "sheets_oauth":
         if not (output_sheet_title and output_sheet_tab):
-            raise RuntimeError("Falta el títol o la pestanya del Google Sheet de sortida.")
+            raise RuntimeError("Falta el tÃ­tol o la pestanya del Google Sheet de sortida.")
         export_rows_to_google_sheets_oauth(
             rows=rows,
             spreadsheet_title=output_sheet_title,
@@ -153,7 +152,15 @@ def run_pipeline(
             token_file=token_file,
             log=log,
         )
+        subtopic_errors = 0
+        for row in rows:
+            subtopic = (row[1] if len(row) > 1 else "").strip()
+            if not subtopic:
+                subtopic_errors += 1
+        if subtopic_errors:
+            _log(f"Control subtopics: {subtopic_errors} FAQ(s) sense subtopic vÃ lid.")
         _log(f"Exported to Google Sheets: {output_sheet_title} / {output_sheet_tab}")
+        stats["subtopic_errors"] = subtopic_errors
     else:
         raise RuntimeError("output_mode ha de ser 'csv', 'sheets_oauth' o 'genweb_json'.")
 
@@ -182,7 +189,7 @@ def run_approved_to_html_pipeline(
         rows = read_rows_from_csv_like_sheets(input_csv_path)
     elif input_mode == "sheets_oauth":
         if not (sheet_title and sheet_tab):
-            raise RuntimeError("Falta títol o pestanya del Google Sheet.")
+            raise RuntimeError("Falta tÃ­tol o pestanya del Google Sheet.")
         rows = read_rows_from_sheets_oauth(
             spreadsheet_title=sheet_title,
             worksheet_name=sheet_tab,
@@ -198,10 +205,21 @@ def run_approved_to_html_pipeline(
     approved = filter_approved(rows)
     _log(f"Files aprovades: {len(approved)}")
 
-    approved.sort(key=lambda r: ((r.get("Tema") or "").lower(), (r.get("Pregunta") or "").lower()))
+    approved.sort(
+        key=lambda r: (
+            (r.get("Subtopic") or r.get("subtopic") or r.get("Tema") or "").lower(),
+            (r.get("Pregunta") or r.get("pregunta") or "").lower(),
+        )
+    )
     html_text = render_upc_faqaccordion(approved)
 
-    topics = len({(r.get("Tema") or "").strip() for r in approved if (r.get("Tema") or "").strip()})
+    topics = len(
+        {
+            (r.get("Subtopic") or r.get("subtopic") or r.get("Tema") or "").strip()
+            for r in approved
+            if (r.get("Subtopic") or r.get("subtopic") or r.get("Tema") or "").strip()
+        }
+    )
     _log(f"Fitxer generat: {output_path}")
 
     return {
@@ -210,3 +228,4 @@ def run_approved_to_html_pipeline(
         "topics": topics,
         "html_text": html_text,
     }
+

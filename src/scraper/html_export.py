@@ -1,4 +1,4 @@
-import html
+﻿import html
 from typing import Dict, List
 from bs4 import BeautifulSoup
 import re
@@ -65,11 +65,13 @@ def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
         order: List[str] = []
         grouped: Dict[str, List[Dict[str, str]]] = {}
         for row in rows:
-            topic = (row.get("Tema") or "").strip() or "Preguntes freqüents"
-            if topic not in grouped:
-                grouped[topic] = []
-                order.append(topic)
-            grouped[topic].append(row)
+            subtopic = _get_row_value_case_insensitive(row, "Subtopic").strip()
+            topic = _get_row_value_case_insensitive(row, "Tema").strip()
+            parent = subtopic or topic or "Preguntes frequents"
+            if parent not in grouped:
+                grouped[parent] = []
+                order.append(parent)
+            grouped[parent].append(row)
         return [(t, grouped[t]) for t in order]
 
     def _slug(text: str) -> str:
@@ -285,3 +287,4 @@ def approved_rows_to_html(approved_rows, log=None):
         )
 
     return render_upc_faqaccordion(items)
+

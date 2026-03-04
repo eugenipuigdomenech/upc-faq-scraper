@@ -125,7 +125,7 @@ class App(ctk.CTk):
 
         # INPUT: sempre CSV
         self.input_mode = ctk.StringVar(value="ui")
-        self.output_mode = ctk.StringVar(value="ui")
+        self.output_mode = ctk.StringVar(value="sheets_oauth")
         self.output_mode.trace_add("write", lambda *_: self._schedule_save_ui_state())
 
         # Input UI grouped by topic
@@ -141,6 +141,9 @@ class App(ctk.CTk):
         self.output_sheet_tab = ctk.StringVar()
         self.output_sheet_title.trace_add("write", lambda *_: self._schedule_save_ui_state())
         self.output_sheet_tab.trace_add("write", lambda *_: self._schedule_save_ui_state())
+        self.recent_sheets_titles: list[str] = []
+        self.recent_sheet_choice = ctk.StringVar(value="")
+        self.html_recent_sheet_choice = ctk.StringVar(value="")
 
         # OAuth files (Sheets)
         self.oauth_client_json = ctk.StringVar(value="")
@@ -154,10 +157,6 @@ class App(ctk.CTk):
         self._refresh_ui()
         self._restore_ui_state()
         self.bind("<Configure>", self._on_window_configure)
-        self.bind("<Control-f>", self._focus_review_search)
-        self.bind("<Control-F>", self._focus_review_search)
-        self.bind("<Control-Shift-A>", lambda _e: self._approve_all())
-        self.bind("<Control-Shift-D>", lambda _e: self._unapprove_all())
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ====Build UI
@@ -192,24 +191,89 @@ class App(ctk.CTk):
         ).pack(side="right", padx=18)
     def _build_body(self):
         body = ctk.CTkFrame(self, fg_color=BG)
-        body.pack(fill="both", expand=True, padx=18, pady=18)
+        body.pack(fill="both", expand=True, padx=10, pady=10)
 
         body.grid_columnconfigure(0, weight=1)
         body.grid_rowconfigure(0, weight=1)
 
-        tabs = ctk.CTkTabview(body)
-        tabs.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 12))
+        self.home_frame = ctk.CTkFrame(body, fg_color="transparent")
+        self.home_frame.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
+        self.home_frame.grid_columnconfigure(0, weight=1)
+        self.home_frame.grid_rowconfigure(0, weight=1)
+
+        home_card = ctk.CTkFrame(self.home_frame, fg_color=LIGHT_PANEL, corner_radius=14)
+        home_card.grid(row=0, column=0, sticky="n", padx=120, pady=(60, 20))
+        home_card.grid_columnconfigure((0, 1), weight=1, uniform="home_btn")
+
+        ctk.CTkLabel(
+            home_card,
+            text="Selecciona una accio",
+            font=ctk.CTkFont(size=22, weight="bold"),
+        ).grid(row=0, column=0, columnspan=2, pady=(24, 8))
+
+        ctk.CTkLabel(
+            home_card,
+            text="Tria si vols descarregar FAQs de una web de la UPC o generar el codi font (FAQs) per Genweb.",
+            text_color="#334155",
+        ).grid(row=1, column=0, columnspan=2, padx=20, pady=(0, 20))
+
+        self.home_download_btn = ctk.CTkButton(
+            home_card,
+            text="Descarregador de \nFAQs UPC",
+            height=110,
+            font=ctk.CTkFont(size=24, weight="bold"),
+            command=self._open_section_download,
+        )
+        self.home_download_btn.grid(row=2, column=0, sticky="nsew", padx=(22, 10), pady=(0, 24))
+
+        self.home_export_btn = ctk.CTkButton(
+            home_card,
+            text="Generador de codi \nfont per Genweb",
+            height=110,
+            font=ctk.CTkFont(size=22, weight="bold"),
+            command=self._open_section_export,
+        )
+        self.home_export_btn.grid(row=2, column=1, sticky="nsew", padx=(10, 22), pady=(0, 24))
+
+        self.workspace_frame = ctk.CTkFrame(body, fg_color="transparent")
+        self.workspace_frame.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
+        self.workspace_frame.grid_columnconfigure(0, weight=1)
+        self.workspace_frame.grid_rowconfigure(0, weight=1)
+        self.workspace_frame.grid_remove()
+
+        self.home_nav_btn = ctk.CTkButton(
+            self.workspace_frame,
+            text="⌂",
+            width=52,
+            font=ctk.CTkFont(size=20, weight="bold"),
+            command=self._show_home,
+        )
+        self.home_nav_btn.place(relx=1.0, x=-10, y=8, anchor="ne")
+
+        tabs = ctk.CTkTabview(self.workspace_frame)
+        tabs.grid(row=0, column=0, sticky="nsew", pady=(0, 6))
+        self.home_nav_btn.lift()
         self.tabs = tabs
-        self.tab_name_scrape = "1) Fonts i descàrrega"
-        self.tab_name_review = "2) Revisió i aprovació"
-        self.tab_name_export = "3) Exportació"
+        self.tab_name_scrape = "Fonts i descàrrega"
+        self.tab_name_export = "Exporta codi font per Genweb"
         self.current_tab_name = self.tab_name_scrape
         self._style_tabview(tabs)
         self.after(50, lambda: self._fix_tab_text_colors(tabs))
 
         tab_scrape = tabs.add(self.tab_name_scrape)
-        tab_review = tabs.add(self.tab_name_review)
         tab_html = tabs.add(self.tab_name_export)
+        try:
+            # Evita la franja superior que CTkTabview reserva pel selector de pestanyes.
+            tabs._outer_spacing = 0
+            tabs._outer_button_overhang = 0
+            tabs._button_height = 0
+            tabs._configure_grid()
+            tabs._set_grid_canvas()
+            tabs._segmented_button.grid_remove()
+            tabs._segmented_button.pack_forget()
+            tabs._segmented_button.place_forget()
+        except Exception:
+            pass
 
         tab_scrape.grid_columnconfigure(0, weight=1)
         tab_scrape.grid_rowconfigure(0, weight=1)
@@ -223,54 +287,38 @@ class App(ctk.CTk):
         self.tab_scrape_scroll.grid_columnconfigure(0, weight=1)
         scrape_parent = self.tab_scrape_scroll
 
-        # IMPORTANT: només cridem la que sí existeix
-        self._build_tab_review(tab_review)
-
         tab_html.grid_columnconfigure(0, weight=1)
-        tab_html.grid_rowconfigure(3, weight=1)  # la fila del log2
+        tab_html.grid_rowconfigure(5, weight=1)  # la fila del log2
 
 
         tabs.configure(command=lambda: self._on_tab_changed())
 
         # TAB 1: SCRAPE I EXPORTA
-        self.in_card = ctk.CTkFrame(scrape_parent, fg_color=LIGHT_PANEL, corner_radius=10)
-        self.in_card.grid(row=0, column=0, sticky="ew", padx=6, pady=(0, 10))
-        self.in_card.grid_columnconfigure(0, weight=1)
-
-        onboarding = ctk.CTkFrame(self.in_card, fg_color="#DBEAFE", corner_radius=8)
-        onboarding.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 6))
         ctk.CTkLabel(
-            onboarding,
-            text="Guia ràpida: 1) Afegeix URLs -> 2) Descarrega FAQs -> 3) Revisa i aprova -> 4) Exporta",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="#1E3A8A",
-            anchor="w",
-            justify="left",
-        ).pack(fill="x", padx=10, pady=8)
+            scrape_parent,
+            text="Descarregador de FAQs",
+            font=ctk.CTkFont(size=28, weight="bold"),
+            text_color=UPC_BLUE,
+        ).grid(row=0, column=0, sticky="w", padx=8, pady=(0, 8))
 
-        title_row = ctk.CTkFrame(self.in_card, fg_color="transparent")
-        title_row.grid(row=1, column=0, padx=12, pady=(6, 4), sticky="ew")
+        ctk.CTkLabel(
+            scrape_parent,
+            text="Entrada · Introdueix la URL de la pàgina d'on extreure les FAQs",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=UPC_BLUE,
+        ).grid(row=1, column=0, sticky="w", padx=8, pady=(0, 6))
 
-        title_label = ctk.CTkLabel(
-            title_row,
-            text="Introdueix la URL de la pàgina d'on extreure les FAQs",
-            font=ctk.CTkFont(size=14, weight="bold")
-        )
-        title_label.pack(side="left")
-
-
-        q = help_icon(title_row, FAQ_FORMAT_HELP_TEXT, UPC_BLUE)
-        q.pack(side="left", padx=(6, 0))
-        self.selection_summary_label = ctk.CTkLabel(title_row, text="")
-        self.selection_summary_label.pack(side="right")
+        self.in_card = ctk.CTkFrame(scrape_parent, fg_color=LIGHT_PANEL, corner_radius=8)
+        self.in_card.grid(row=2, column=0, sticky="ew", padx=4, pady=(0, 8))
+        self.in_card.grid_columnconfigure(0, weight=1)
         self.topics_list = ctk.CTkFrame(self.in_card, fg_color="transparent", height=8)
-        self.topics_list.grid(row=2, column=0, sticky="ew", padx=6, pady=(0, 6))
+        self.topics_list.grid(row=0, column=0, sticky="ew", padx=6, pady=(4, 4))
         # Controlem manualment l'alçada per evitar espais buits grans.
         self.topics_list.grid_propagate(False)
         self.topics_list.grid_columnconfigure(0, weight=1)
 
         actions_row = ctk.CTkFrame(self.in_card, fg_color="transparent")
-        actions_row.grid(row=3, column=0, sticky="w", padx=12, pady=(0, 8))
+        actions_row.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 6))
 
         ctk.CTkButton(
             actions_row,
@@ -278,25 +326,28 @@ class App(ctk.CTk):
             command=lambda: self.add_topic_group(add_initial_url=True),
             width=150
         ).pack(side="left")
+        help_icon(actions_row, FAQ_FORMAT_HELP_TEXT, UPC_BLUE).pack(side="left", padx=(8, 0))
 
         self.add_topic_group(topic_name=TOPICS_UI[0], add_initial_url=True)
 
+        ctk.CTkLabel(
+            scrape_parent,
+            text="Sortida · Tria on descarregar les FAQs per a Aprobar o Rebutjar",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=UPC_BLUE,
+        ).grid(row=3, column=0, sticky="w", padx=8, pady=(0, 6))
+
         # --- SORTIDA card ---
-        self.out_card = ctk.CTkFrame(scrape_parent, fg_color=LIGHT_PANEL, corner_radius=10)
-        self.out_card.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 16))
+        self.out_card = ctk.CTkFrame(scrape_parent, fg_color=LIGHT_PANEL, corner_radius=8)
+        self.out_card.grid(row=4, column=0, sticky="ew", padx=4, pady=(0, 10))
         self.out_card.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(
-            self.out_card, text="Tria on vols revisar i aprobar les FAQs",
-            font=ctk.CTkFont(size=14, weight="bold")
-        ).grid(row=0, column=0, columnspan=3, padx=12, pady=(10, 6), sticky="w")
-
         out_mode_frame = ctk.CTkFrame(self.out_card, fg_color="transparent")
-        out_mode_frame.grid(row=1, column=0, columnspan=3, sticky="w", padx=12, pady=(6, 14))
+        out_mode_frame.grid(row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(10, 14))
 
         ctk.CTkRadioButton(
-            out_mode_frame, text="Aprovar via UI",
-            variable=self.output_mode, value="ui",
+            out_mode_frame, text="Google Sheets",
+            variable=self.output_mode, value="sheets_oauth",
             command=self._refresh_ui
         ).pack(side="left", padx=(0, 18))
 
@@ -304,13 +355,29 @@ class App(ctk.CTk):
             out_mode_frame, text="CSV",
             variable=self.output_mode, value="csv",
             command=self._refresh_ui
-        ).pack(side="left", padx=(0, 18))
-
-        ctk.CTkRadioButton(
-            out_mode_frame, text="Google Sheets",
-            variable=self.output_mode, value="sheets_oauth",
-            command=self._refresh_ui
         ).pack(side="left")
+
+        self.recent_sheets_row = ctk.CTkFrame(self.out_card, fg_color="transparent")
+        self.recent_sheets_row.grid(row=1, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 8))
+        self.recent_sheets_row.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(self.recent_sheets_row, text="Google Sheets recents").grid(
+            row=0, column=0, padx=10, pady=4, sticky="w"
+        )
+        self.recent_sheets_menu = ctk.CTkOptionMenu(
+            self.recent_sheets_row,
+            variable=self.recent_sheet_choice,
+            values=["Nou..."],
+            command=lambda _v: self._apply_selected_recent_sheet(),
+        )
+        self.recent_sheets_menu.grid(row=0, column=1, padx=6, pady=4, sticky="ew")
+        self.recent_sheets_apply_btn = ctk.CTkButton(
+            self.recent_sheets_row,
+            text="Usa",
+            width=90,
+            command=self._apply_selected_recent_sheet,
+        )
+        self.recent_sheets_apply_btn.grid(row=0, column=2, padx=6, pady=4)
 
         # CSV output row
         self.out_file_row = ctk.CTkFrame(self.out_card, fg_color="transparent")
@@ -366,7 +433,7 @@ class App(ctk.CTk):
 
         # --- Botó + progress + log (tab 1) ---
         btns = ctk.CTkFrame(scrape_parent, fg_color="transparent")
-        btns.grid(row=2, column=0, sticky="w", padx=6, pady=(4, 6))
+        btns.grid(row=5, column=0, sticky="w", padx=6, pady=(4, 6))
 
         self.run_btn = ctk.CTkButton(
             btns,
@@ -385,7 +452,7 @@ class App(ctk.CTk):
         self.retry_failed_btn.pack(side="left", padx=(8, 0))
 
         progress_wrap = ctk.CTkFrame(scrape_parent, fg_color="transparent")
-        progress_wrap.grid(row=3, column=0, sticky="ew", padx=6, pady=(6, 8))
+        progress_wrap.grid(row=6, column=0, sticky="ew", padx=6, pady=(6, 8))
         progress_wrap.grid_columnconfigure(0, weight=1)
         progress_wrap.grid_columnconfigure(1, weight=0)
 
@@ -397,7 +464,7 @@ class App(ctk.CTk):
         self.progress_status.grid(row=0, column=1, sticky="e")
 
         details_row = ctk.CTkFrame(scrape_parent, fg_color="transparent")
-        details_row.grid(row=4, column=0, sticky="w", padx=6, pady=(0, 6))
+        details_row.grid(row=7, column=0, sticky="w", padx=6, pady=(0, 6))
         self.log_toggle_btn = ctk.CTkButton(
             details_row,
             text="Veure més detalls",
@@ -408,21 +475,14 @@ class App(ctk.CTk):
 
 
         # --- LOG card (gris) ---
-        self.log_card = ctk.CTkFrame(scrape_parent, fg_color=LIGHT_PANEL, corner_radius=10)
-        self.log_card.grid(row=5, column=0, sticky="ew", padx=6, pady=(0, 10))
+        self.log_card = ctk.CTkFrame(scrape_parent, fg_color=LIGHT_PANEL, corner_radius=8)
+        self.log_card.grid(row=8, column=0, sticky="ew", padx=4, pady=(0, 8))
         self.log_card.configure(height=250)
         self.log_card.grid_propagate(False)
         self.log_card.grid_columnconfigure(0, weight=1)
         self.log_card.grid_rowconfigure(0, weight=1)
 
         self.log = ctk.CTkTextbox(self.log_card)
-        self.println(
-            "Aquesta eina té dues funcions:\n\n"
-            "1) Descarregador de FAQs: introdueix una URL amb preguntes freqüents "
-            "i genera un fitxer per revisar-les i marcar-les com aprovades.\n\n"
-            "2) Generador de codi per Genweb: importa el fitxer amb les FAQs "
-            "aprovades i obté el codi font llest per enganxar a la web."
-        )
         self.log.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
         # Forcem estat inicial amagat.
         self._log_details_open = True
@@ -433,7 +493,7 @@ class App(ctk.CTk):
 
         # TAB 2: APROVATS -> HTML
         # (variables ja les tens definides en altres llocs? si no, aquí també val)
-        self.html_input_mode = ctk.StringVar(value="ui")
+        self.html_input_mode = ctk.StringVar(value="sheets_oauth")
         self.html_input_csv_path = ctk.StringVar()
         self.html_sheet_title = ctk.StringVar()
         self.html_sheet_tab = ctk.StringVar()
@@ -443,38 +503,41 @@ class App(ctk.CTk):
         self.html_sheet_title.trace_add("write", lambda *_: self._schedule_save_ui_state())
         self.html_sheet_tab.trace_add("write", lambda *_: self._schedule_save_ui_state())
 
-        card2 = ctk.CTkFrame(tab_html, fg_color=LIGHT_PANEL, corner_radius=10)
-        card2.grid(row=0, column=0, sticky="ew", padx=6, pady=(0, 10))
+        card2 = ctk.CTkFrame(tab_html, fg_color=LIGHT_PANEL, corner_radius=8)
         card2.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
-            card2, text="Selecciona el fitxer revisat (agafarà només les FAQs aprovades)",
-            font=ctk.CTkFont(size=14, weight="bold")
-        ).grid(row=0, column=0, columnspan=3, padx=12, pady=(10, 6), sticky="w")
+            tab_html,
+            text="Generador de codi font",
+            font=ctk.CTkFont(size=28, weight="bold"),
+            text_color=UPC_BLUE,
+        ).grid(row=0, column=0, columnspan=3, padx=8, pady=(0, 8), sticky="w")
+
+        ctk.CTkLabel(
+            tab_html, text="Entrada · Selecciona el fitxer amb les FAQs a convertir (només agafarà les aprovades)",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=UPC_BLUE,
+        ).grid(row=1, column=0, columnspan=3, padx=8, pady=(0, 6), sticky="w")
+
+        card2.grid(row=2, column=0, sticky="ew", padx=4, pady=(0, 8))
 
         mode_frame2 = ctk.CTkFrame(card2, fg_color="transparent")
-        mode_frame2.grid(row=1, column=0, columnspan=3, sticky="w", padx=12, pady=(6, 14))
+        mode_frame2.grid(row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(10, 14))
 
         ctk.CTkRadioButton(
-            mode_frame2, text="Aprovades a la UI (recomanat)",
-            variable=self.html_input_mode, value="ui",
-            command=self._refresh_html_ui
-        ).pack(side="left", padx=(0, 18))
-
-        ctk.CTkRadioButton(
-            mode_frame2, text="CSV editat",
-            variable=self.html_input_mode, value="csv",
-            command=self._refresh_html_ui
-        ).pack(side="left", padx=(0, 18))
-
-        ctk.CTkRadioButton(
-            mode_frame2, text="Google Sheets editat",
+            mode_frame2, text="Google Sheets",
             variable=self.html_input_mode, value="sheets_oauth",
+            command=self._refresh_html_ui
+        ).pack(side="left", padx=(0, 18))
+
+        ctk.CTkRadioButton(
+            mode_frame2, text="CSV",
+            variable=self.html_input_mode, value="csv",
             command=self._refresh_html_ui
         ).pack(side="left")
 
         self.html_csv_row = ctk.CTkFrame(card2, fg_color="transparent")
-        self.html_csv_row.grid(row=2, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 10))
+        self.html_csv_row.grid(row=1, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 10))
         self.html_csv_row.grid_columnconfigure(1, weight=1)
 
         self.html_csv_entry = file_row(
@@ -492,6 +555,28 @@ class App(ctk.CTk):
         self.html_sheets_row = ctk.CTkFrame(card2, fg_color="transparent")
         self.html_sheets_row.grid(row=3, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 10))
         self.html_sheets_row.grid_columnconfigure(1, weight=1)
+
+        self.html_recent_sheets_row = ctk.CTkFrame(card2, fg_color="transparent")
+        self.html_recent_sheets_row.grid(row=2, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 8))
+        self.html_recent_sheets_row.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(self.html_recent_sheets_row, text="Google Sheets recents").grid(
+            row=0, column=0, padx=10, pady=4, sticky="w"
+        )
+        self.html_recent_sheets_menu = ctk.CTkOptionMenu(
+            self.html_recent_sheets_row,
+            variable=self.html_recent_sheet_choice,
+            values=["Nou..."],
+            command=lambda _v: self._apply_selected_recent_sheet_html(),
+        )
+        self.html_recent_sheets_menu.grid(row=0, column=1, padx=6, pady=4, sticky="ew")
+        self.html_recent_sheets_apply_btn = ctk.CTkButton(
+            self.html_recent_sheets_row,
+            text="Usa",
+            width=90,
+            command=self._apply_selected_recent_sheet_html,
+        )
+        self.html_recent_sheets_apply_btn.grid(row=0, column=2, padx=6, pady=4)
 
         self.html_sheet_title_entry = text_row(
             self.html_sheets_row, 0, "Títol del Google Sheet", self.html_sheet_title
@@ -525,26 +610,26 @@ class App(ctk.CTk):
             tooltip_text=OAUTH_HELP_TEXT,
         )
 
-        btns2 = ctk.CTkFrame(tab_html, fg_color="transparent")
-        btns2.grid(row=2, column=0, sticky="w", padx=6, pady=(4, 6))
+        ctk.CTkLabel(
+            tab_html,
+            text="Sortida · Codi font per a Genweb",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=UPC_BLUE,
+        ).grid(row=3, column=0, sticky="w", padx=8, pady=(0, 6))
 
-        self.gen_btn = ctk.CTkButton(
-            btns2,
-            text="Generar HTML Genweb",
-            command=self.generate_html_clicked,
-            width=260,
-        )
-        self.gen_btn.pack(side="left")
+        btns2 = ctk.CTkFrame(tab_html, fg_color="transparent")
+        btns2.grid(row=4, column=0, sticky="w", padx=6, pady=(4, 6))
+
         self.show_code_btn = ctk.CTkButton(
             btns2,
-            text="Mostrar el codi font",
+            text="Generar codi font",
             command=self.show_source_code_clicked,
-            width=180,
+            width=220,
         )
-        self.show_code_btn.pack(side="left", padx=(8, 0))
+        self.show_code_btn.pack(side="left")
 
-        self.code_card = ctk.CTkFrame(tab_html, fg_color=LIGHT_PANEL, corner_radius=10)
-        self.code_card.grid(row=3, column=0, sticky="nsew", padx=6, pady=10)
+        self.code_card = ctk.CTkFrame(tab_html, fg_color=LIGHT_PANEL, corner_radius=8)
+        self.code_card.grid(row=5, column=0, sticky="nsew", padx=4, pady=8)
         self.code_card.grid_columnconfigure(0, weight=1)
         self.code_card.grid_rowconfigure(0, weight=1)
 
@@ -552,7 +637,7 @@ class App(ctk.CTk):
         self.log2.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
 
         copy_row = ctk.CTkFrame(tab_html, fg_color="transparent")
-        copy_row.grid(row=4, column=0, sticky="w", padx=6, pady=(0, 10))
+        copy_row.grid(row=6, column=0, sticky="w", padx=6, pady=(0, 10))
 
         ctk.CTkButton(
             copy_row,
@@ -569,19 +654,42 @@ class App(ctk.CTk):
             justify="left",
             font=ctk.CTkFont(size=12),
         )
-        self.scrape_validation_label.grid(row=6, column=0, sticky="ew", padx=8, pady=(0, 2))
+        self.scrape_validation_label.grid(row=9, column=0, sticky="ew", padx=8, pady=(0, 2))
         self.scrape_validation_label.grid_remove()
 
         self.export_validation_label = ctk.CTkLabel(
             tab_html, text="", text_color="#B91C1C", anchor="w"
         )
-        self.export_validation_label.grid(row=5, column=0, sticky="ew", padx=8, pady=(0, 4))
+        self.export_validation_label.grid(row=7, column=0, sticky="ew", padx=8, pady=(0, 4))
         self.export_validation_label.grid_remove()
 
         # Refresh inicials (important)
         self._refresh_ui()
         self._refresh_html_ui()
         self._setup_live_validation()
+        self._show_home()
+
+    def _show_home(self):
+        if hasattr(self, "workspace_frame"):
+            self.workspace_frame.grid_remove()
+        if hasattr(self, "home_frame"):
+            self.home_frame.grid()
+
+    def _open_section(self, tab_name: str):
+        if hasattr(self, "home_frame"):
+            self.home_frame.grid_remove()
+        if hasattr(self, "workspace_frame"):
+            self.workspace_frame.grid()
+        if hasattr(self, "tabs"):
+            self.tabs.set(tab_name)
+            self.current_tab_name = tab_name
+            self._fix_tab_text_colors(self.tabs)
+
+    def _open_section_download(self):
+        self._open_section(self.tab_name_scrape)
+
+    def _open_section_export(self):
+        self._open_section(self.tab_name_export)
 
     # ====UI component helpers
     # ARBRE TOPICS / URLS
@@ -630,6 +738,7 @@ class App(ctk.CTk):
             "groups": groups,
             "review_filter_only_approved": bool(self.review_filter_only_approved.get()),
             "scraped_items": scraped_items,
+            "recent_google_sheets": list(self.recent_sheets_titles),
             "generated_code": self.generated_code_cache or self.log2.get("1.0", "end-1c"),
             "scrape_config": {
                 "output_mode": self.output_mode.get(),
@@ -693,15 +802,16 @@ class App(ctk.CTk):
             bool(data.get("review_filter_only_approved", False)) if isinstance(data, dict) else False
         )
         generated_code = (data.get("generated_code") or "") if isinstance(data, dict) else ""
+        recent_google_sheets = data.get("recent_google_sheets") if isinstance(data, dict) else None
         scrape_config = data.get("scrape_config") if isinstance(data, dict) else None
         export_config = data.get("export_config") if isinstance(data, dict) else None
 
         self._is_restoring_state = True
         try:
             if isinstance(scrape_config, dict):
-                output_mode = (scrape_config.get("output_mode") or "ui").strip()
-                if output_mode not in {"ui", "csv", "sheets_oauth"}:
-                    output_mode = "ui"
+                output_mode = (scrape_config.get("output_mode") or "csv").strip()
+                if output_mode not in {"csv", "sheets_oauth"}:
+                    output_mode = "csv"
                 self.output_mode.set(output_mode)
                 self.output_file_path.set((scrape_config.get("output_file_path") or "").strip())
                 self.output_sheet_title.set((scrape_config.get("output_sheet_title") or "").strip())
@@ -710,13 +820,21 @@ class App(ctk.CTk):
                 self.token_file.set((scrape_config.get("token_file") or "").strip())
 
             if isinstance(export_config, dict):
-                html_input_mode = (export_config.get("html_input_mode") or "ui").strip()
-                if html_input_mode not in {"ui", "csv", "sheets_oauth"}:
-                    html_input_mode = "ui"
+                html_input_mode = (export_config.get("html_input_mode") or "csv").strip()
+                if html_input_mode not in {"csv", "sheets_oauth"}:
+                    html_input_mode = "csv"
                 self.html_input_mode.set(html_input_mode)
                 self.html_input_csv_path.set((export_config.get("html_input_csv_path") or "").strip())
                 self.html_sheet_title.set((export_config.get("html_sheet_title") or "").strip())
                 self.html_sheet_tab.set((export_config.get("html_sheet_tab") or "").strip())
+
+            if isinstance(recent_google_sheets, list):
+                cleaned = []
+                for title in recent_google_sheets:
+                    t = (title or "").strip()
+                    if t and t not in cleaned:
+                        cleaned.append(t)
+                self.recent_sheets_titles = cleaned[:8]
 
             if groups:
                 self._clear_all_topic_groups()
@@ -770,6 +888,7 @@ class App(ctk.CTk):
 
             self._refresh_ui()
             self._refresh_html_ui()
+            self._update_recent_sheets_ui()
             self._update_source_selection_summary()
             url_count = sum(len(g["url_rows"]) for g in self.topic_groups)
             self._set_restore_summary(len(self.topic_groups), url_count, len(self.scraped_items))
@@ -780,10 +899,84 @@ class App(ctk.CTk):
         self._save_ui_state()
         self.destroy()
 
+    def _update_recent_sheets_ui(self):
+        values = ["Nou..."] + (self.recent_sheets_titles[:] if self.recent_sheets_titles else [])
+        if hasattr(self, "recent_sheets_menu"):
+            try:
+                self.recent_sheets_menu.configure(values=values)
+            except Exception:
+                pass
+
+            current_title = (self.output_sheet_title.get() or "").strip()
+            current = (self.recent_sheet_choice.get() or "").strip()
+            if current_title in self.recent_sheets_titles:
+                self.recent_sheet_choice.set(current_title)
+            elif current not in values:
+                self.recent_sheet_choice.set("Nou...")
+
+            self._apply_selected_recent_sheet()
+
+        if hasattr(self, "html_recent_sheets_menu"):
+            try:
+                self.html_recent_sheets_menu.configure(values=values)
+            except Exception:
+                pass
+
+            html_current_title = (self.html_sheet_title.get() or "").strip()
+            html_current = (self.html_recent_sheet_choice.get() or "").strip()
+            if html_current_title in self.recent_sheets_titles:
+                self.html_recent_sheet_choice.set(html_current_title)
+            elif html_current not in values:
+                self.html_recent_sheet_choice.set("Nou...")
+
+            self._apply_selected_recent_sheet_html()
+
+    def _apply_selected_recent_sheet(self):
+        title = (self.recent_sheet_choice.get() or "").strip()
+        lock_title = bool(title and title != "Nou...")
+        if lock_title:
+            if self.output_sheet_title.get().strip() != title:
+                self.output_sheet_title.set(title)
+        try:
+            self.output_sheet_title_entry.configure(state="disabled" if lock_title else "normal")
+        except Exception:
+            pass
+        try:
+            self.recent_sheets_apply_btn.configure(state="normal" if lock_title else "disabled")
+        except Exception:
+            pass
+        self._run_live_validation()
+
+    def _apply_selected_recent_sheet_html(self):
+        title = (self.html_recent_sheet_choice.get() or "").strip()
+        lock_title = bool(title and title != "Nou...")
+        if lock_title:
+            if self.html_sheet_title.get().strip() != title:
+                self.html_sheet_title.set(title)
+        try:
+            self.html_sheet_title_entry.configure(state="disabled" if lock_title else "normal")
+        except Exception:
+            pass
+        try:
+            self.html_recent_sheets_apply_btn.configure(state="normal" if lock_title else "disabled")
+        except Exception:
+            pass
+        self._run_live_validation()
+
+    def _remember_recent_sheet(self, title: str):
+        t = (title or "").strip()
+        if not t:
+            return
+        self.recent_sheets_titles = [x for x in self.recent_sheets_titles if x != t]
+        self.recent_sheets_titles.insert(0, t)
+        self.recent_sheets_titles = self.recent_sheets_titles[:8]
+        self._update_recent_sheets_ui()
+        self._schedule_save_ui_state()
+
     def add_topic_group(self, topic_name: str = "", add_initial_url: bool = True):
         self.topic_seq += 1
 
-        group_frame = ctk.CTkFrame(self.topics_list, fg_color="#E5E7EB", corner_radius=8)
+        group_frame = ctk.CTkFrame(self.topics_list, fg_color=LIGHT_PANEL, corner_radius=8)
         group_frame.pack(fill="x", padx=6, pady=6)
         # Evita alçades fixes grans dels CTkFrame i ajusta al contingut real.
         group_frame.pack_propagate(True)
@@ -905,7 +1098,7 @@ class App(ctk.CTk):
             variable=selected_var,
             width=20,
             command=lambda: self._on_url_selected_changed(group),
-        ).grid(row=0, column=0, padx=(0, 6), sticky="w")
+        ).grid(row=0, column=0, padx=(70, 6), sticky="w")
 
         entry = ctk.CTkEntry(row_frame, textvariable=url_var, placeholder_text="https://...")
         entry.grid(row=0, column=1, sticky="ew", padx=(0, 8))
@@ -976,20 +1169,8 @@ class App(ctk.CTk):
         group["count_label"].configure(text=f"{selected}/{total} URLs")
 
     def _update_source_selection_summary(self):
-        total_topics = len(self.topic_groups)
-        selected_topics = sum(1 for g in self.topic_groups if g["selected_var"].get())
-
-        total_urls = 0
-        selected_urls = 0
         for g in self.topic_groups:
             self._update_topic_count(g)
-            total_urls += len(g["url_rows"])
-            selected_urls += sum(1 for r in g["url_rows"] if r["selected_var"].get())
-
-        msg = f"Seleccionat: {selected_topics}/{total_topics} topics, {selected_urls}/{total_urls} URLs"
-
-        if hasattr(self, "selection_summary_label"):
-            self.selection_summary_label.configure(text=msg)
         self._refresh_topics_list_height()
 
     def _refresh_topics_list_height(self):
@@ -1066,9 +1247,7 @@ class App(ctk.CTk):
         self.scraped_items = items
         self.review_filter_only_approved.set(False)
         self._refresh_review_list()
-        if hasattr(self, "tabs"):
-            self.tabs.set(self.tab_name_review)
-            self.current_tab_name = self.tab_name_review
+        self._open_section_download()
         self._run_live_validation()
         self._schedule_save_ui_state()
 
@@ -1247,10 +1426,7 @@ class App(ctk.CTk):
     def _validate_export_form(self, live_only: bool = False):
         mode = self.html_input_mode.get()
         msg = ""
-        if mode == "ui":
-            if not self._get_approved_rows():
-                msg = "Aprova almenys una FAQ a la pestanya de revisió."
-        elif mode == "csv":
+        if mode == "csv":
             path = self.html_input_csv_path.get().strip()
             ok = bool(path and os.path.exists(path))
             self._set_entry_valid(getattr(self, "html_csv_entry", None), is_valid=ok, neutral_when_empty=True, value=path)
@@ -1295,16 +1471,12 @@ class App(ctk.CTk):
 
     def _on_tab_changed(self):
         selected = self.tabs.get()
-        if selected == self.tab_name_review and not self.scraped_items:
-            self.tabs.set(self.current_tab_name)
-            messagebox.showinfo("Pas 1 necessari", "Primer descarrega FAQs a la pestanya 1.")
-            return
         self.current_tab_name = selected
         self._fix_tab_text_colors(self.tabs)
 
     def _focus_review_search(self, _event=None):
         if hasattr(self, "review_search_entry"):
-            self.tabs.set(self.tab_name_review)
+            self._open_section_download()
             self.review_search_entry.focus_set()
             self.review_search_entry.select_range(0, "end")
         return "break"
@@ -1339,46 +1511,36 @@ class App(ctk.CTk):
     # REFRESH D'ESTAT UI
     def _refresh_ui(self):
         mode = self.output_mode.get()
-
-        if mode == "ui":
-            # No cal mostrar cap sortida: només omplirem la Tab 2
+        if mode == "sheets_oauth":
             self.out_file_row.grid_remove()
-            self.out_sheets_row.grid_remove()
-            self.oauth_row.grid_remove()
-
-        elif mode == "sheets_oauth":
-            self.out_file_row.grid_remove()
+            self.recent_sheets_row.grid()
             self.out_sheets_row.grid()
             self.oauth_row.grid()
 
         else:  # csv
+            self.recent_sheets_row.grid_remove()
             self.out_sheets_row.grid_remove()
             self.oauth_row.grid_remove()
             self.out_file_row.grid()
+        self._update_recent_sheets_ui()
         self._run_live_validation()
 
     def _refresh_html_ui(self):
         mode = self.html_input_mode.get()
-
-        if mode == "ui":
+        if mode == "sheets_oauth":
             self.html_csv_row.grid_remove()
-            self.html_sheets_row.grid_remove()
-            self.html_oauth_row.grid_remove()
-            self.gen_btn.configure(text="Generar HTML Genweb", width=220)
-
-        elif mode == "sheets_oauth":
-            self.html_csv_row.grid_remove()
+            self.html_recent_sheets_row.grid()
             self.html_sheets_row.grid()
             self.html_oauth_row.grid()
-            self.gen_btn.configure(text="Exportar aprovades", width=180)
             self.log2.delete("1.0", "end")
 
         else:  # csv
+            self.html_recent_sheets_row.grid_remove()
             self.html_sheets_row.grid_remove()
             self.html_oauth_row.grid_remove()
             self.html_csv_row.grid()
-            self.gen_btn.configure(text="Exportar aprovades", width=180)
             self.log2.delete("1.0", "end")
+        self._update_recent_sheets_ui()
         self._run_live_validation()
     def _needs_oauth(self) -> bool:
         return self.output_mode.get() == "sheets_oauth"
@@ -1395,9 +1557,7 @@ class App(ctk.CTk):
         # OUTPUT
         mode = self.output_mode.get()
 
-        if mode == "ui":
-            pass  # no validem res de sortida
-        elif mode == "csv":
+        if mode == "csv":
             out = self.output_file_path.get().strip()
             if not out:
                 return False, "Selecciona un fitxer de sortida."
@@ -1416,11 +1576,6 @@ class App(ctk.CTk):
 
     def validate_html_inputs(self):
         mode = self.html_input_mode.get()
-
-        if mode == "ui":
-            if not self._get_approved_rows():
-                return False, "No has aprovat cap FAQ a la pestanya 2."
-            return True, ""
 
         if mode == "csv":
             path = self.html_input_csv_path.get().strip()
@@ -1496,10 +1651,6 @@ class App(ctk.CTk):
     def _set_export_buttons_enabled(self, enabled: bool):
         state = "normal" if enabled else "disabled"
         try:
-            self.gen_btn.configure(state=state)
-        except Exception:
-            pass
-        try:
             self.show_code_btn.configure(state=state)
         except Exception:
             pass
@@ -1526,44 +1677,25 @@ class App(ctk.CTk):
             def progress_cb(done: int, total: int, _url: str):
                 self._set_progress(done, total)
 
-            if output_mode == "ui":
-                rows, blocks, stats, errors = core.build_outputs(
-                    sources, log=self.ui_log, debug=False, progress_cb=progress_cb
-                )
-
-                flat_items: list[tuple[str, str, str, str, str]] = []
-                for b in blocks:
-                    topic = b.get("topic", "")
-                    source = b.get("source_url", "")
-                    for it in b.get("items", []) or []:
-                        item_topic = (it.get("topic", "") or "").strip()
-                        question = it.get("q", "")
-                        answer = it.get("a", "")
-                        subtitle = item_topic if item_topic and item_topic != topic else ""
-                        flat_items.append((topic, subtitle, question, answer, source))
-
-                # carregar a la UI al fil principal
-                self.after(0, lambda: self._load_scraped_into_ui(flat_items))
-                self.ui_log(f"Carregades a la UI: {len(flat_items)} FAQs")
-
-            else:
-                stats = core.run_pipeline(
-                    input_mode="ui",
-                    output_mode=output_mode,
-                    sources=sources,
-                    output_sheet_title=self.output_sheet_title.get().strip()
-                    if output_mode == "sheets_oauth" else None,
-                    output_sheet_tab=self.output_sheet_tab.get().strip()
-                    if output_mode == "sheets_oauth" else None,
-                    output_file_path=self.output_file_path.get().strip()
-                    if output_mode == "csv" else None,
-                    oauth_client_json=self.oauth_client_json.get().strip() or "oauth_client.json",
-                    token_file=self.token_file.get().strip() or "token.json",
-                    log=self.ui_log,
-                    debug=False,
-                    progress_cb=progress_cb,
-                )
-                errors = stats.get("errors", [])
+            stats = core.run_pipeline(
+                input_mode="ui",
+                output_mode=output_mode,
+                sources=sources,
+                output_sheet_title=self.output_sheet_title.get().strip()
+                if output_mode == "sheets_oauth" else None,
+                output_sheet_tab=self.output_sheet_tab.get().strip()
+                if output_mode == "sheets_oauth" else None,
+                output_file_path=self.output_file_path.get().strip()
+                if output_mode == "csv" else None,
+                oauth_client_json=self.oauth_client_json.get().strip() or "oauth_client.json",
+                token_file=self.token_file.get().strip() or "token.json",
+                log=self.ui_log,
+                debug=False,
+                progress_cb=progress_cb,
+            )
+            errors = stats.get("errors", [])
+            if output_mode == "sheets_oauth":
+                self.after(0, lambda: self._remember_recent_sheet(self.output_sheet_title.get().strip()))
 
             self.failed_sources = [
                 ((e.get("url") or "").strip(), (e.get("topic") or "").strip())
@@ -1581,6 +1713,8 @@ class App(ctk.CTk):
                 f"FAQs trobades: {stats.get('total_faqs', 0)}",
                 f"Files generades: {stats.get('total_rows', 0)}",
             ]
+            if stats.get("subtopic_errors"):
+                summary_lines.append(f"Control subtopics: {stats.get('subtopic_errors')} incidència(es)")
 
             if stats.get("total_errors"):
                 summary_lines.append(f"Errors: {stats.get('total_errors')}")
@@ -1605,24 +1739,12 @@ class App(ctk.CTk):
         try:
             mode = self.html_input_mode.get()
 
-            if mode == "ui":
-                approved_rows = self._get_approved_rows()
-
-                if not approved_rows:
-                    raise RuntimeError("No hi ha cap FAQ aprovada a la pestanya 2.")
-
-                # Ara cridem una funció nova de core
-                html_text = core.approved_rows_to_html(approved_rows, log=self.ui_log2)
-
-                self.after(0, lambda: self._show_generated_code(html_text))
-                return
-
             if mode == "sheets_oauth":
                 approved_rows = self._get_approved_rows()
                 if approved_rows:
                     sheet_rows = self._approved_rows_to_sheets_rows(approved_rows)
                     self.ui_log2(
-                        f"FAQs aprovades a la UI: {len(approved_rows)}. Exportant a Google Sheets..."
+                        f"FAQs aprovades detectades: {len(approved_rows)}. Exportant a Google Sheets..."
                     )
                     core.export_rows_to_google_sheets_oauth(
                         rows=sheet_rows,
@@ -1635,6 +1757,7 @@ class App(ctk.CTk):
                     self.ui_log2(
                         "Procés completat. FAQs aprovades exportades al Google Sheets."
                     )
+                    self.after(0, lambda: self._remember_recent_sheet(self.html_sheet_title.get().strip()))
                     return
 
             # --- MODE CSV / SHEETS (com abans) ---
@@ -1651,6 +1774,8 @@ class App(ctk.CTk):
             self.ui_log2(
                 "Procés completat. En aquest mode no es mostra el codi font a la UI."
             )
+            if mode == "sheets_oauth":
+                self.after(0, lambda: self._remember_recent_sheet(self.html_sheet_title.get().strip()))
 
         except Exception as e:
             msg = str(e)
@@ -1663,14 +1788,6 @@ class App(ctk.CTk):
         try:
             mode = self.html_input_mode.get()
 
-            if mode == "ui":
-                approved_rows = self._get_approved_rows()
-                if not approved_rows:
-                    raise RuntimeError("No hi ha cap FAQ aprovada a la pestanya 2.")
-                html_text = core.approved_rows_to_html(approved_rows, log=self.ui_log2)
-                self.after(0, lambda: self._show_generated_code(html_text))
-                return
-
             result = core.run_approved_to_html_pipeline(
                 input_mode=mode,
                 input_csv_path=self.html_input_csv_path.get().strip() if mode == "csv" else None,
@@ -1682,6 +1799,8 @@ class App(ctk.CTk):
             )
             html_text = result.get("html_text", "") if isinstance(result, dict) else ""
             self.after(0, lambda: self._show_generated_code(html_text))
+            if mode == "sheets_oauth":
+                self.after(0, lambda: self._remember_recent_sheet(self.html_sheet_title.get().strip()))
 
         except Exception as e:
             msg = str(e)
@@ -1779,7 +1898,7 @@ class App(ctk.CTk):
             w.destroy()
 
         if not self.scraped_items:
-            ctk.CTkLabel(self.review_list, text="Encara no hi ha FAQs. Fes scraping a la pestanya 1.").pack(pady=10)
+            ctk.CTkLabel(self.review_list, text="Encara no hi ha FAQs. Fes scraping a la seccio Descarrega.").pack(pady=10)
             return
 
         only_approved = self.review_filter_only_approved.get()
@@ -2132,9 +2251,10 @@ class App(ctk.CTk):
             rows.append(
                 [
                     topic or "",
+                    "",
                     question or "",
                     answer or "",
-                    "aprovat",
+                    "Aprovat",
                     "",
                     "",
                     "",
