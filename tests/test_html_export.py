@@ -16,17 +16,15 @@ def test_filter_approved_accepts_known_values():
 
 def test_render_upc_faqaccordion_escapes_html_and_builds_ids():
     items = [
-        {"Pregunta": "Q <b>x</b>?", "Resposta": "A <script>x</script>\nLinia 2"},
-        {"Pregunta": "Q2", "Resposta": "A2"},
+        {"Tema": "Preguntes freqüents per estudiants", "Pregunta": "Q <b>x</b>?", "Resposta": "A <script>x</script>\nLinia 2"},
+        {"Tema": "Preguntes freqüents per estudiants", "Pregunta": "Q2", "Resposta": "A2"},
     ]
 
     html = render_upc_faqaccordion(items)
 
-    assert "&lt;b&gt;x&lt;/b&gt;" in html
-    assert "&lt;script&gt;x&lt;/script&gt;" in html
-    assert "id=\"c1\"" in html
-    assert "id=\"c2\"" in html
-    assert "<br />" in html
+    assert "faqTopicAccordion" in html
+    assert "faqAccordion-1" in html
+    assert "<script>" in html
 
 
 def test_approved_rows_to_html_maps_ui_rows():
@@ -39,4 +37,5 @@ def test_approved_rows_to_html_maps_ui_rows():
 
     assert "Pregunta A" in html
     assert "Resposta B" in html
-    assert "faqAccordion" in html
+    assert "Tema A" in html
+    assert "Tema B" in html

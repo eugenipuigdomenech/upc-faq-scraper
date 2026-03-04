@@ -6,6 +6,7 @@ from typing import Any
 class FaqItem:
     id: str
     topic: str
+    topic_subtitle: str
     question: str
     answer: str
     source: str

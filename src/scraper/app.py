@@ -610,6 +610,7 @@ class App(ctk.CTk):
                 {
                     "id": it.id,
                     "topic": it.topic,
+                    "topic_subtitle": (it.topic_subtitle or ""),
                     "question": it.question,
                     "answer": it.answer,
                     "source": it.source,
@@ -744,6 +745,7 @@ class App(ctk.CTk):
                     items.append(
                         self._make_faq_item(
                             topic=(it.get("topic") or "").strip(),
+                            topic_subtitle=(it.get("topic_subtitle") or "").strip(),
                             question=(it.get("question") or "").strip(),
                             answer=(it.get("answer") or "").strip(),
                             source=(it.get("source") or "").strip(),
@@ -1014,13 +1016,14 @@ class App(ctk.CTk):
     def _make_faq_item(
         self,
         topic: str,
+        topic_subtitle: str,
         question: str,
         answer: str,
         source: str,
         approved: bool = False,
         forced_id: str = "",
     ) -> FaqItem:
-        fid = forced_id or self._make_id(topic, question, source)
+        fid = forced_id or self._make_id(topic, topic_subtitle, question, source)
         approved_var = ctk.BooleanVar(value=approved)
         approved_var.trace_add(
             "write",
@@ -1029,20 +1032,28 @@ class App(ctk.CTk):
         return FaqItem(
             id=fid,
             topic=topic,
+            topic_subtitle=topic_subtitle,
             question=question,
             answer=answer,
             source=source,
             approved_var=approved_var,
         )
 
-    def _load_scraped_into_ui(self, flat_items: list[tuple[str, str, str, str]]):
+    def _load_scraped_into_ui(self, flat_items: list[tuple[str, str, str, str, str]]):
         """
-        flat_items: [(topic, question, answer, source), ...]
+        flat_items: [(topic_title, topic_subtitle, question, answer, source), ...]
         Aquesta funció s'executa al fil principal (UI).
         """
         items = [
-            self._make_faq_item(topic=topic, question=question, answer=answer, source=source, approved=False)
-            for topic, question, answer, source in flat_items
+            self._make_faq_item(
+                topic=topic,
+                topic_subtitle=topic_subtitle,
+                question=question,
+                answer=answer,
+                source=source,
+                approved=False,
+            )
+            for topic, topic_subtitle, question, answer, source in flat_items
         ]
 
         self.scraped_items = items
@@ -1490,14 +1501,16 @@ class App(ctk.CTk):
                     sources, log=self.ui_log, debug=False, progress_cb=progress_cb
                 )
 
-                flat_items: list[tuple[str, str, str, str]] = []
+                flat_items: list[tuple[str, str, str, str, str]] = []
                 for b in blocks:
                     topic = b.get("topic", "")
                     source = b.get("source_url", "")
                     for it in b.get("items", []) or []:
+                        item_topic = (it.get("topic", "") or "").strip()
                         question = it.get("q", "")
                         answer = it.get("a", "")
-                        flat_items.append((topic, question, answer, source))
+                        subtitle = item_topic if item_topic and item_topic != topic else ""
+                        flat_items.append((topic, subtitle, question, answer, source))
 
                 # carregar a la UI al fil principal
                 self.after(0, lambda: self._load_scraped_into_ui(flat_items))
@@ -1809,15 +1822,31 @@ class App(ctk.CTk):
         self._render_html_to_textbox(a, item.answer, item.question)
 
         # Columna 4: Topic
-        topic = ctk.CTkLabel(
-            row,
+        topic_frame = ctk.CTkFrame(row, fg_color="transparent", width=220)
+        topic_frame.grid(row=0, column=3, padx=(0, 12), pady=8, sticky="ne")
+
+        topic_title = ctk.CTkLabel(
+            topic_frame,
             text=item.topic,
-            width=140,
-            anchor="nw",
-            text_color="#6B7280",
+            anchor="w",
+            justify="left",
+            wraplength=220,
+            text_color="#374151",
             font=ctk.CTkFont(size=12, weight="bold"),
         )
-        topic.grid(row=0, column=3, padx=(0, 12), pady=8, sticky="ne")
+        topic_title.pack(fill="x")
+
+        if (item.topic_subtitle or "").strip():
+            topic_subtitle = ctk.CTkLabel(
+                topic_frame,
+                text=item.topic_subtitle,
+                anchor="w",
+                justify="left",
+                wraplength=220,
+                text_color="#6B7280",
+                font=ctk.CTkFont(size=11),
+            )
+            topic_subtitle.pack(fill="x", pady=(2, 0))
 
         row.grid_columnconfigure(2, weight=1)
         row.grid_columnconfigure(3, weight=0)
@@ -2032,7 +2061,8 @@ class App(ctk.CTk):
         rows = []
         for it in self.scraped_items:
             if it.approved_var.get():
-                rows.append([it.topic, it.question, it.answer, it.source])
+                export_topic = (it.topic_subtitle or "").strip() or (it.topic or "")
+                rows.append([export_topic, it.question, it.answer, it.source])
         return rows
 
     def _approved_rows_to_sheets_rows(self, approved_rows: list[list[str]]) -> list[list[str]]:
@@ -2054,8 +2084,8 @@ class App(ctk.CTk):
         return rows
 
 
-    def _make_id(self, topic: str, question: str, source: str) -> str:
-        s = f"{topic}|{question}|{source}".encode("utf-8")
+    def _make_id(self, topic: str, topic_subtitle: str, question: str, source: str) -> str:
+        s = f"{topic}|{topic_subtitle}|{question}|{source}".encode("utf-8")
         return hashlib.sha1(s).hexdigest()[:12]
 
     def copy_generated_code(self):
