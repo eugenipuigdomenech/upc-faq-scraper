@@ -28,7 +28,6 @@ try:
         BG,
         FAQ_FORMAT_HELP_TEXT,
         LIGHT_PANEL,
-        OAUTH_HELP_TEXT,
         TOPICS_UI,
         UPC_BLUE,
         UPC_BLUE_TAB,
@@ -42,7 +41,6 @@ except ImportError:
             BG,
             FAQ_FORMAT_HELP_TEXT,
             LIGHT_PANEL,
-            OAUTH_HELP_TEXT,
             TOPICS_UI,
             UPC_BLUE,
             UPC_BLUE_TAB,
@@ -55,7 +53,6 @@ except ImportError:
             BG,
             FAQ_FORMAT_HELP_TEXT,
             LIGHT_PANEL,
-            OAUTH_HELP_TEXT,
             TOPICS_UI,
             UPC_BLUE,
             UPC_BLUE_TAB,
@@ -95,6 +92,9 @@ class App(ctk.CTk):
         self._run_started_at = 0.0
         self._state_write_job = None
         self._is_restoring_state = False
+        self._action_btn_font = ctk.CTkFont(size=13, weight="bold")
+        self._action_btn_height = 38
+        self._action_btn_width = 200
 
         # Fix icona barra de tasques Windows (més fiable a l'EXE)
         if ctypes:
@@ -145,8 +145,12 @@ class App(ctk.CTk):
         self.html_recent_sheet_choice = ctk.StringVar(value="")
 
         # OAuth files (Sheets)
-        self.oauth_client_json = ctk.StringVar(value="")
-        self.token_file = ctk.StringVar(value="")
+        self._default_oauth_client_json = resource_path("oauth_client.json")
+        self._default_token_file = "token.json"
+        self.oauth_client_json = ctk.StringVar(value=self._default_oauth_client_json)
+        self.token_file = ctk.StringVar(value=self._default_token_file)
+        self.google_auth_status = ctk.StringVar(value="")
+        self._google_auth_in_progress = False
         self.oauth_client_json.trace_add("write", lambda *_: self._schedule_save_ui_state())
         self.token_file.trace_add("write", lambda *_: self._schedule_save_ui_state())
 
@@ -157,6 +161,16 @@ class App(ctk.CTk):
         self._restore_ui_state()
         self.bind("<Configure>", self._on_window_configure)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _create_google_logo_image(self):
+        size = (28, 28)
+        try:
+            img = Image.open(resource_path("assets/Google_logo.png"))
+            return ctk.CTkImage(light_image=img, size=size)
+        except Exception:
+            # Fallback discret per si falta l'asset.
+            img = Image.new("RGBA", size, (0, 0, 0, 0))
+            return ctk.CTkImage(light_image=img, size=size)
 
     # ====Build UI
     # CONSTRUCCIO UI
@@ -185,53 +199,53 @@ class App(ctk.CTk):
 
     def _build_body(self):
         body = ctk.CTkFrame(self, fg_color=BG)
-        body.pack(fill="both", expand=True, padx=10, pady=10)
+        body.pack(fill="both", expand=True, padx=16, pady=16)
 
         body.grid_columnconfigure(0, weight=1)
         body.grid_rowconfigure(0, weight=1)
 
         self.home_frame = ctk.CTkFrame(body, fg_color="transparent")
-        self.home_frame.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
+        self.home_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
         self.home_frame.grid_columnconfigure(0, weight=1)
         self.home_frame.grid_rowconfigure(0, weight=1)
 
         home_card = ctk.CTkFrame(self.home_frame, fg_color=LIGHT_PANEL, corner_radius=14)
-        home_card.grid(row=0, column=0, sticky="n", padx=120, pady=(60, 20))
+        home_card.grid(row=0, column=0, sticky="n", padx=140, pady=(72, 28))
         home_card.grid_columnconfigure((0, 1), weight=1, uniform="home_btn")
 
         ctk.CTkLabel(
             home_card,
             text="Que vols fer?",
             font=ctk.CTkFont(size=24, weight="bold"),
-        ).grid(row=0, column=0, columnspan=2, pady=(28, 6))
+        ).grid(row=0, column=0, columnspan=2, pady=(34, 10))
 
         ctk.CTkLabel(
             home_card,
             text="Tria una opcio",
             text_color="#334155",
             font=ctk.CTkFont(size=13),
-        ).grid(row=1, column=0, columnspan=2, padx=20, pady=(0, 16))
+        ).grid(row=1, column=0, columnspan=2, padx=26, pady=(0, 22))
 
         self.home_download_btn = ctk.CTkButton(
             home_card,
             text="Descarregar FAQs",
-            height=96,
+            height=122,
             font=ctk.CTkFont(size=22, weight="bold"),
             command=self._open_section_download,
         )
-        self.home_download_btn.grid(row=2, column=0, sticky="nsew", padx=(22, 10), pady=(0, 24))
+        self.home_download_btn.grid(row=2, column=0, sticky="nsew", padx=(28, 14), pady=(0, 30))
 
         self.home_export_btn = ctk.CTkButton(
             home_card,
             text="Generar codi",
-            height=96,
+            height=122,
             font=ctk.CTkFont(size=22, weight="bold"),
             command=self._open_section_export,
         )
-        self.home_export_btn.grid(row=2, column=1, sticky="nsew", padx=(10, 22), pady=(0, 24))
+        self.home_export_btn.grid(row=2, column=1, sticky="nsew", padx=(14, 28), pady=(0, 30))
 
         self.workspace_frame = ctk.CTkFrame(body, fg_color="transparent")
-        self.workspace_frame.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
+        self.workspace_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
         self.workspace_frame.grid_columnconfigure(0, weight=1)
         self.workspace_frame.grid_rowconfigure(0, weight=1)
         self.workspace_frame.grid_remove()
@@ -304,22 +318,34 @@ class App(ctk.CTk):
         ).grid(row=1, column=0, sticky="w", padx=8, pady=(0, 6))
 
         self.in_card = ctk.CTkFrame(scrape_parent, fg_color=LIGHT_PANEL, corner_radius=8)
-        self.in_card.grid(row=2, column=0, sticky="ew", padx=4, pady=(0, 8))
+        self.in_card.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 12))
         self.in_card.grid_columnconfigure(0, weight=1)
         self.topics_list = ctk.CTkFrame(self.in_card, fg_color="transparent", height=8)
-        self.topics_list.grid(row=0, column=0, sticky="ew", padx=6, pady=(4, 4))
+        self.topics_list.grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 8))
         # Controlem manualment l'alçada per evitar espais buits grans.
         self.topics_list.grid_propagate(False)
         self.topics_list.grid_columnconfigure(0, weight=1)
 
         actions_row = ctk.CTkFrame(self.in_card, fg_color="transparent")
-        actions_row.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 6))
+        actions_row.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 10))
+
+        self.add_url_btn = ctk.CTkButton(
+            actions_row,
+            text="Afegeix URL",
+            command=self.add_url_to_selected_topic,
+            width=150,
+            height=self._action_btn_height,
+            font=self._action_btn_font,
+        )
+        self.add_url_btn.pack(side="left", padx=(0, 8))
 
         ctk.CTkButton(
             actions_row,
             text="Afegeix topic",
             command=lambda: self.add_topic_group(add_initial_url=True),
-            width=150
+            width=150,
+            height=self._action_btn_height,
+            font=self._action_btn_font,
         ).pack(side="left")
         help_icon(actions_row, FAQ_FORMAT_HELP_TEXT, UPC_BLUE).pack(side="left", padx=(8, 0))
 
@@ -334,12 +360,12 @@ class App(ctk.CTk):
 
         # --- SORTIDA card ---
         self.out_card = ctk.CTkFrame(scrape_parent, fg_color=LIGHT_PANEL, corner_radius=8)
-        self.out_card.grid(row=4, column=0, sticky="ew", padx=4, pady=(0, 10))
+        self.out_card.grid(row=4, column=0, sticky="ew", padx=8, pady=(0, 12))
         self.out_card.grid_columnconfigure(0, weight=1)
         self.out_card.grid_columnconfigure(1, weight=1)
 
         out_mode_frame = ctk.CTkFrame(self.out_card, fg_color="transparent")
-        out_mode_frame.grid(row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(10, 14))
+        out_mode_frame.grid(row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(12, 16))
 
         ctk.CTkRadioButton(
             out_mode_frame, text="Google Sheets",
@@ -354,7 +380,7 @@ class App(ctk.CTk):
         ).pack(side="left")
 
         self.recent_sheets_row = ctk.CTkFrame(self.out_card, fg_color="transparent")
-        self.recent_sheets_row.grid(row=1, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 8))
+        self.recent_sheets_row.grid(row=1, column=0, columnspan=3, sticky="ew", padx=12, pady=(0, 10))
         self.recent_sheets_row.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(self.recent_sheets_row, text="Google Sheets recents").grid(
@@ -370,7 +396,7 @@ class App(ctk.CTk):
 
         # CSV output row
         self.out_file_row = ctk.CTkFrame(self.out_card, fg_color="transparent")
-        self.out_file_row.grid(row=2, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 10))
+        self.out_file_row.grid(row=2, column=0, columnspan=3, sticky="ew", padx=12, pady=(0, 12))
         self.out_file_row.grid_columnconfigure(1, weight=1)
 
         self.output_file_entry = file_row(
@@ -385,7 +411,7 @@ class App(ctk.CTk):
 
         # Sheets rows
         self.out_sheets_row = ctk.CTkFrame(self.out_card, fg_color="transparent")
-        self.out_sheets_row.grid(row=3, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 10))
+        self.out_sheets_row.grid(row=3, column=0, columnspan=3, sticky="ew", padx=12, pady=(0, 12))
         self.out_sheets_row.grid_columnconfigure(1, weight=1)
 
         self.output_sheet_title_entry = text_row(
@@ -395,45 +421,69 @@ class App(ctk.CTk):
             self.out_sheets_row, 1, "Nom de la pestanya", self.output_sheet_tab
         )
 
-        self.oauth_row = ctk.CTkFrame(self.out_card, fg_color="transparent")
-        self.oauth_row.grid(row=4, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 10))
-        self.oauth_row.grid_columnconfigure(1, weight=1)
+        self.google_auth_row = ctk.CTkFrame(self.out_card, fg_color="transparent")
+        self.google_auth_row.grid(row=4, column=0, columnspan=3, sticky="ew", padx=12, pady=(0, 12))
+        self.google_auth_row.grid_columnconfigure(1, weight=1)
+        self.google_auth_row.grid_columnconfigure(2, weight=1)
 
-        # --- OAuth row (TAB 1) ---
-        oauth_title_row = ctk.CTkFrame(self.oauth_row, fg_color="transparent")
-        oauth_title_row.grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 0))
+        self.google_logo_image = self._create_google_logo_image()
 
-        ctk.CTkLabel(oauth_title_row, text="OAuth client (oauth_client.json)").pack(side="left")
-
-        oauth_q1 = help_icon(oauth_title_row, OAUTH_HELP_TEXT, UPC_BLUE)
-        oauth_q1.pack(side="left", padx=(6, 0))
-
-        self.oauth_entry_1 = file_row(
-            parent=self.oauth_row,
-            row=0,
-            label="OAuth client (oauth_client.json)",
-            var=self.oauth_client_json,
-            save=False,
-            types=[("JSON", "*.json")],
-            icon_color=UPC_BLUE,
-            button_text="Explora...",
-            tooltip_text=OAUTH_HELP_TEXT,
+        self.google_login_btn_1 = ctk.CTkButton(
+            self.google_auth_row,
+            text="Iniciar sessió amb Google",
+            command=self.google_login_clicked,
+            width=self._action_btn_width,
+            height=self._action_btn_height,
+            font=self._action_btn_font,
+            image=self.google_logo_image,
+            fg_color="white",
+            hover_color="#F8FAFC",
+            text_color="#3C4043",
+            border_width=1,
+            border_color="#DADCE0",
         )
+        self.google_login_btn_1.grid(row=0, column=0, sticky="w", padx=(12, 10), pady=(2, 2))
+
+        self.google_logout_btn_1 = ctk.CTkButton(
+            self.google_auth_row,
+            text="Sortir de Google",
+            command=self.google_logout_clicked,
+            width=170,
+            height=self._action_btn_height,
+            font=self._action_btn_font,
+            fg_color="#E5E7EB",
+            hover_color="#D1D5DB",
+            text_color="#1F2937",
+            border_width=1,
+            border_color="#CBD5E1",
+        )
+        self.google_logout_btn_1.grid(row=0, column=1, sticky="w", padx=(0, 10), pady=(2, 2))
+
+        self.google_auth_status_label_1 = ctk.CTkLabel(
+            self.google_auth_row,
+            textvariable=self.google_auth_status,
+            text_color="#334155",
+            anchor="w",
+            justify="left",
+        )
+        self.google_auth_status_label_1.grid(row=0, column=2, sticky="w", padx=(4, 12), pady=(0, 0))
 
         # --- Botó + progress + log (tab 1) ---
         btns = ctk.CTkFrame(self.out_card, fg_color="transparent")
-        btns.grid(row=5, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 6))
+        btns.grid(row=5, column=0, columnspan=3, sticky="w", padx=12, pady=(6, 8))
 
         self.run_btn = ctk.CTkButton(
             btns,
             text="Descarregar FAQs",
             command=self.run_clicked,
-            width=170,
+            width=self._action_btn_width,
+            height=self._action_btn_height,
+            font=self._action_btn_font,
         )
         self.run_btn.pack(side="left")
 
         progress_wrap = ctk.CTkFrame(self.out_card, fg_color="transparent")
-        progress_wrap.grid(row=6, column=0, columnspan=3, sticky="ew", padx=6, pady=(6, 8))
+        progress_wrap.grid(row=6, column=0, columnspan=3, sticky="ew", padx=12, pady=(8, 10))
         progress_wrap.grid_columnconfigure(0, weight=1)
         progress_wrap.grid_columnconfigure(1, weight=0)
 
@@ -445,11 +495,13 @@ class App(ctk.CTk):
         self.progress_status.grid(row=0, column=1, sticky="e")
 
         details_row = ctk.CTkFrame(self.out_card, fg_color="transparent")
-        details_row.grid(row=7, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 6))
+        details_row.grid(row=7, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 8))
         self.log_toggle_btn = ctk.CTkButton(
             details_row,
             text="Veure més detalls",
-            width=160,
+            width=self._action_btn_width,
+            height=self._action_btn_height,
+            font=self._action_btn_font,
             command=self._toggle_log_details,
         )
         self.log_toggle_btn.pack(side="left")
@@ -457,7 +509,7 @@ class App(ctk.CTk):
 
         # --- LOG card (gris) ---
         self.log_card = ctk.CTkFrame(self.out_card, fg_color=LIGHT_PANEL, corner_radius=8)
-        self.log_card.grid(row=8, column=0, columnspan=3, sticky="ew", padx=4, pady=(0, 8))
+        self.log_card.grid(row=8, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 10))
         self.log_card.configure(height=250)
         self.log_card.grid_propagate(False)
         self.log_card.grid_columnconfigure(0, weight=1)
@@ -500,10 +552,10 @@ class App(ctk.CTk):
             text_color=UPC_BLUE,
         ).grid(row=1, column=0, columnspan=3, padx=8, pady=(0, 6), sticky="w")
 
-        card2.grid(row=2, column=0, sticky="ew", padx=4, pady=(0, 8))
+        card2.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 12))
 
         mode_frame2 = ctk.CTkFrame(card2, fg_color="transparent")
-        mode_frame2.grid(row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(10, 14))
+        mode_frame2.grid(row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(12, 16))
 
         ctk.CTkRadioButton(
             mode_frame2, text="Google Sheets",
@@ -518,7 +570,7 @@ class App(ctk.CTk):
         ).pack(side="left")
 
         self.html_csv_row = ctk.CTkFrame(card2, fg_color="transparent")
-        self.html_csv_row.grid(row=1, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 10))
+        self.html_csv_row.grid(row=1, column=0, columnspan=3, sticky="ew", padx=12, pady=(0, 12))
         self.html_csv_row.grid_columnconfigure(1, weight=1)
 
         self.html_csv_entry = file_row(
@@ -534,11 +586,11 @@ class App(ctk.CTk):
         )
 
         self.html_sheets_row = ctk.CTkFrame(card2, fg_color="transparent")
-        self.html_sheets_row.grid(row=3, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 10))
+        self.html_sheets_row.grid(row=3, column=0, columnspan=3, sticky="ew", padx=12, pady=(0, 12))
         self.html_sheets_row.grid_columnconfigure(1, weight=1)
 
         self.html_recent_sheets_row = ctk.CTkFrame(card2, fg_color="transparent")
-        self.html_recent_sheets_row.grid(row=2, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 8))
+        self.html_recent_sheets_row.grid(row=2, column=0, columnspan=3, sticky="ew", padx=12, pady=(0, 10))
         self.html_recent_sheets_row.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(self.html_recent_sheets_row, text="Google Sheets recents").grid(
@@ -559,30 +611,50 @@ class App(ctk.CTk):
             self.html_sheets_row, 1, "Nom de la pestanya", self.html_sheet_tab
         )
 
-        self.html_oauth_row = ctk.CTkFrame(card2, fg_color="transparent")
-        self.html_oauth_row.grid(row=4, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 10))
-        self.html_oauth_row.grid_columnconfigure(1, weight=1)
+        self.html_google_auth_row = ctk.CTkFrame(card2, fg_color="transparent")
+        self.html_google_auth_row.grid(row=4, column=0, columnspan=3, sticky="ew", padx=12, pady=(0, 12))
+        self.html_google_auth_row.grid_columnconfigure(1, weight=1)
+        self.html_google_auth_row.grid_columnconfigure(2, weight=1)
 
-        # --- OAuth row (TAB 2) ---
-        oauth_title_row2 = ctk.CTkFrame(self.html_oauth_row, fg_color="transparent")
-        oauth_title_row2.grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 0))
-
-        ctk.CTkLabel(oauth_title_row2, text="OAuth client (oauth_client.json)").pack(side="left")
-
-        oauth_q2 = help_icon(oauth_title_row2, OAUTH_HELP_TEXT, UPC_BLUE)
-        oauth_q2.pack(side="left", padx=(6, 0))
-
-        self.oauth_entry_2 = file_row(
-            parent=self.html_oauth_row,
-            row=0,
-            label="OAuth client (oauth_client.json)",
-            var=self.oauth_client_json,
-            save=False,
-            types=[("JSON", "*.json")],
-            icon_color=UPC_BLUE,
-            button_text="Explora...",
-            tooltip_text=OAUTH_HELP_TEXT,
+        self.google_login_btn_2 = ctk.CTkButton(
+            self.html_google_auth_row,
+            text="Iniciar sessió amb Google",
+            command=self.google_login_clicked,
+            width=self._action_btn_width,
+            height=self._action_btn_height,
+            font=self._action_btn_font,
+            image=self.google_logo_image,
+            fg_color="white",
+            hover_color="#F8FAFC",
+            text_color="#3C4043",
+            border_width=1,
+            border_color="#DADCE0",
         )
+        self.google_login_btn_2.grid(row=0, column=0, sticky="w", padx=(12, 10), pady=(2, 2))
+
+        self.google_logout_btn_2 = ctk.CTkButton(
+            self.html_google_auth_row,
+            text="Sortir de Google",
+            command=self.google_logout_clicked,
+            width=170,
+            height=self._action_btn_height,
+            font=self._action_btn_font,
+            fg_color="#E5E7EB",
+            hover_color="#D1D5DB",
+            text_color="#1F2937",
+            border_width=1,
+            border_color="#CBD5E1",
+        )
+        self.google_logout_btn_2.grid(row=0, column=1, sticky="w", padx=(0, 10), pady=(2, 2))
+
+        self.google_auth_status_label_2 = ctk.CTkLabel(
+            self.html_google_auth_row,
+            textvariable=self.google_auth_status,
+            text_color="#334155",
+            anchor="w",
+            justify="left",
+        )
+        self.google_auth_status_label_2.grid(row=0, column=2, sticky="w", padx=(4, 12), pady=(0, 0))
 
         ctk.CTkLabel(
             tab_html,
@@ -592,12 +664,12 @@ class App(ctk.CTk):
         ).grid(row=3, column=0, sticky="w", padx=8, pady=(0, 6))
 
         self.output_html_card = ctk.CTkFrame(tab_html, fg_color=LIGHT_PANEL, corner_radius=8)
-        self.output_html_card.grid(row=4, column=0, sticky="nsew", padx=4, pady=(0, 8))
+        self.output_html_card.grid(row=4, column=0, sticky="nsew", padx=8, pady=(0, 12))
         self.output_html_card.grid_columnconfigure(0, weight=1)
         self.output_html_card.grid_rowconfigure(1, weight=1)
 
         btns2 = ctk.CTkFrame(self.output_html_card, fg_color="transparent")
-        btns2.grid(row=0, column=0, sticky="ew", padx=6, pady=(8, 6))
+        btns2.grid(row=0, column=0, sticky="w", padx=12, pady=(6, 8))
 
         ctk.CTkLabel(
             btns2,
@@ -615,12 +687,14 @@ class App(ctk.CTk):
             btns2,
             text="Generar codi font",
             command=self.show_source_code_clicked,
-            width=220,
+            width=self._action_btn_width,
+            height=self._action_btn_height,
+            font=self._action_btn_font,
         )
         self.show_code_btn.pack(side="left")
 
         self.code_card = ctk.CTkFrame(self.output_html_card, fg_color=LIGHT_PANEL, corner_radius=8)
-        self.code_card.grid(row=1, column=0, sticky="nsew", padx=6, pady=(2, 8))
+        self.code_card.grid(row=1, column=0, sticky="nsew", padx=12, pady=(4, 10))
         self.code_card.grid_columnconfigure(0, weight=1)
         self.code_card.grid_rowconfigure(0, weight=1)
 
@@ -628,14 +702,17 @@ class App(ctk.CTk):
         self.log2.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
 
         copy_row = ctk.CTkFrame(self.output_html_card, fg_color="transparent")
-        copy_row.grid(row=2, column=0, sticky="w", padx=6, pady=(0, 10))
+        copy_row.grid(row=2, column=0, sticky="w", padx=12, pady=(0, 12))
 
-        ctk.CTkButton(
+        self.copy_code_btn = ctk.CTkButton(
             copy_row,
             text="Copiar tot el codi",
             command=self.copy_generated_code,
-            width=180
-        ).pack(side="left")
+            width=self._action_btn_width,
+            height=self._action_btn_height,
+            font=self._action_btn_font,
+        )
+        self.copy_code_btn.pack(side="left")
 
         self.scrape_validation_label = ctk.CTkLabel(
             scrape_parent,
@@ -692,6 +769,143 @@ class App(ctk.CTk):
             base_dir = os.path.join(os.path.expanduser("~"), ".upc_faq_scraper")
         os.makedirs(base_dir, exist_ok=True)
         return os.path.join(base_dir, "ui_state.json")
+
+    def _oauth_client_path(self) -> str:
+        return (self.oauth_client_json.get() or "").strip() or self._default_oauth_client_json
+
+    def _token_file_path(self) -> str:
+        return (self.token_file.get() or "").strip() or self._default_token_file
+
+    def _resolve_token_storage_path(self, token_file: str) -> str:
+        p = (token_file or "").strip() or self._default_token_file
+        if os.path.isabs(p):
+            return p
+        appdata = os.getenv("APPDATA")
+        if appdata:
+            base_dir = os.path.join(appdata, "UPCFAQScraper")
+        else:
+            base_dir = os.path.join(os.path.expanduser("~"), ".upc_faq_scraper")
+        os.makedirs(base_dir, exist_ok=True)
+        return os.path.join(base_dir, p)
+
+    def _is_google_session_available(self) -> bool:
+        token_path = self._resolve_token_storage_path(self._token_file_path())
+        return os.path.exists(token_path)
+
+    def _set_google_login_buttons_state(self, state: str):
+        for btn_name in (
+            "google_login_btn_1",
+            "google_login_btn_2",
+            "google_logout_btn_1",
+            "google_logout_btn_2",
+        ):
+            btn = getattr(self, btn_name, None)
+            if btn:
+                try:
+                    btn.configure(state=state)
+                except Exception:
+                    pass
+
+    def _update_google_auth_status(self):
+        oauth_path = self._oauth_client_path()
+        if self._google_auth_in_progress:
+            status = "Google Login en curs..."
+            color = "#1D4ED8"
+        elif not os.path.exists(oauth_path):
+            status = f"Falta oauth_client.json ({oauth_path})"
+            color = "#B91C1C"
+        elif self._is_google_session_available():
+            status = "Sessió de Google activa."
+            color = "#166534"
+        else:
+            status = "Sense sessió activa. Prem 'Iniciar sessió amb Google'."
+            color = "#334155"
+
+        self.google_auth_status.set(status)
+        for lbl_name in ("google_auth_status_label_1", "google_auth_status_label_2"):
+            lbl = getattr(self, lbl_name, None)
+            if lbl:
+                try:
+                    lbl.configure(text_color=color)
+                except Exception:
+                    pass
+
+    def google_login_clicked(self):
+        if self._google_auth_in_progress:
+            return
+
+        oauth_path = self._oauth_client_path()
+        if not os.path.exists(oauth_path):
+            messagebox.showerror("Google Login", f"No s'ha trobat oauth_client.json:\n{oauth_path}")
+            self._update_google_auth_status()
+            return
+
+        self._google_auth_in_progress = True
+        self._set_google_login_buttons_state("disabled")
+        self._update_google_auth_status()
+        self.println("Google Login: iniciant autenticació...")
+        threading.Thread(target=self._google_login_background, daemon=True).start()
+
+    def google_logout_clicked(self):
+        if self._google_auth_in_progress:
+            return
+
+        token_file = self._token_file_path()
+        candidates = [self._resolve_token_storage_path(token_file)]
+        if token_file and os.path.isabs(token_file):
+            candidates.append(token_file)
+        else:
+            candidates.append(os.path.abspath(token_file or self._default_token_file))
+
+        removed = 0
+        seen = set()
+        for path in candidates:
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+                    removed += 1
+            except Exception as e:
+                messagebox.showerror("Sortir de Google", f"No s'ha pogut eliminar el token:\n{path}\n\n{e}")
+                return
+
+        if removed > 0:
+            self.println("Sessió de Google tancada. Token eliminat.")
+            messagebox.showinfo("Sortir de Google", "Sessió tancada. Pots iniciar amb un altre compte.")
+        else:
+            self.println("No hi havia cap token actiu per eliminar.")
+            messagebox.showinfo("Sortir de Google", "No hi havia cap sessió activa.")
+
+        self._update_google_auth_status()
+        self._run_live_validation()
+
+    def _google_login_background(self):
+        oauth_path = self._oauth_client_path()
+        token_file = self._token_file_path()
+        try:
+            core.get_oauth_client(
+                oauth_client_json=oauth_path,
+                token_file=token_file,
+            )
+            self.after(
+                0,
+                lambda: messagebox.showinfo(
+                    "Google Login",
+                    "Sessió iniciada correctament. Ja pots treballar amb Google Sheets.",
+                ),
+            )
+            self.after(0, lambda: self.println("Google Login completat."))
+        except Exception as e:
+            msg = str(e)
+            self.after(0, lambda: self.println(f"Google Login error: {msg}"))
+            self.after(0, lambda: messagebox.showerror("Google Login", msg))
+        finally:
+            self._google_auth_in_progress = False
+            self.after(0, lambda: self._set_google_login_buttons_state("normal"))
+            self.after(0, self._update_google_auth_status)
+            self.after(0, self._run_live_validation)
 
     def _serialize_sources_state(self) -> dict:
         groups = []
@@ -811,8 +1025,10 @@ class App(ctk.CTk):
                 self.output_file_path.set((scrape_config.get("output_file_path") or "").strip())
                 self.output_sheet_title.set((scrape_config.get("output_sheet_title") or "").strip())
                 self.output_sheet_tab.set((scrape_config.get("output_sheet_tab") or "").strip())
-                self.oauth_client_json.set((scrape_config.get("oauth_client_json") or "").strip())
-                self.token_file.set((scrape_config.get("token_file") or "").strip())
+                oauth_saved = (scrape_config.get("oauth_client_json") or "").strip()
+                token_saved = (scrape_config.get("token_file") or "").strip()
+                self.oauth_client_json.set(oauth_saved or self._default_oauth_client_json)
+                self.token_file.set(token_saved or self._default_token_file)
 
             if isinstance(export_config, dict):
                 html_input_mode = (export_config.get("html_input_mode") or "csv").strip()
@@ -892,6 +1108,7 @@ class App(ctk.CTk):
             self._refresh_ui()
             self._refresh_html_ui()
             self._update_recent_sheets_ui()
+            self._update_google_auth_status()
             self._update_source_selection_summary()
             url_count = sum(len(g["url_rows"]) for g in self.topic_groups)
             self._set_restore_summary(len(self.topic_groups), url_count, len(self.scraped_items))
@@ -1043,19 +1260,12 @@ class App(ctk.CTk):
 
         ctk.CTkButton(
             header,
-            text="+ URL",
-            width=70,
-            command=lambda: self.add_url_to_topic(group),
-        ).grid(row=0, column=4, padx=(0, 6))
-
-        ctk.CTkButton(
-            header,
             text="X",
             width=34,
             fg_color="#B91C1C",
             hover_color="#991B1B",
             command=lambda: self.remove_topic_group(group_frame),
-        ).grid(row=0, column=5)
+        ).grid(row=0, column=4)
 
         body = ctk.CTkFrame(group_frame, fg_color="transparent", height=1)
         body.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
@@ -1106,6 +1316,16 @@ class App(ctk.CTk):
         self._update_source_selection_summary()
         self._schedule_save_ui_state()
         self._run_live_validation()
+
+    def add_url_to_selected_topic(self):
+        if not self.topic_groups:
+            group = self.add_topic_group(topic_name=TOPICS_UI[0], add_initial_url=False)
+        else:
+            group = next((g for g in self.topic_groups if g["selected_var"].get()), self.topic_groups[0])
+
+        if not group["expanded_var"].get():
+            self.toggle_topic_group(group)
+        self.add_url_to_topic(group)
 
     def add_url_to_topic(self, group, url_value: str = ""):
         row_frame = ctk.CTkFrame(group["urls_frame"], fg_color="transparent")
@@ -1414,7 +1634,7 @@ class App(ctk.CTk):
         elif mode == "sheets_oauth":
             title = self.output_sheet_title.get().strip()
             tab = self.output_sheet_tab.get().strip()
-            oauth = self.oauth_client_json.get().strip() or "oauth_client.json"
+            oauth = self._oauth_client_path()
             self._set_entry_valid(
                 getattr(self, "output_sheet_title_entry", None),
                 is_valid=bool(title),
@@ -1427,16 +1647,10 @@ class App(ctk.CTk):
                 neutral_when_empty=True,
                 value=tab,
             )
-            self._set_entry_valid(
-                getattr(self, "oauth_entry_1", None),
-                is_valid=os.path.exists(oauth),
-                neutral_when_empty=True,
-                value=oauth,
-            )
             if not title or not tab:
                 msg = "Completa títol i pestanya del Google Sheet."
             elif not os.path.exists(oauth):
-                msg = f"No es troba OAuth: {oauth}"
+                msg = f"Falta oauth_client.json al projecte: {oauth}"
 
         if hasattr(self, "scrape_validation_label"):
             self.scrape_validation_label.configure(text=msg)
@@ -1460,7 +1674,7 @@ class App(ctk.CTk):
         elif mode == "sheets_oauth":
             title = self.html_sheet_title.get().strip()
             tab = self.html_sheet_tab.get().strip()
-            oauth = self.oauth_client_json.get().strip() or "oauth_client.json"
+            oauth = self._oauth_client_path()
             self._set_entry_valid(
                 getattr(self, "html_sheet_title_entry", None),
                 is_valid=bool(title),
@@ -1473,16 +1687,10 @@ class App(ctk.CTk):
                 neutral_when_empty=True,
                 value=tab,
             )
-            self._set_entry_valid(
-                getattr(self, "oauth_entry_2", None),
-                is_valid=os.path.exists(oauth),
-                neutral_when_empty=True,
-                value=oauth,
-            )
             if not title or not tab:
                 msg = "Completa títol i pestanya del Google Sheet."
             elif not os.path.exists(oauth):
-                msg = f"No es troba OAuth: {oauth}"
+                msg = f"Falta oauth_client.json al projecte: {oauth}"
 
         if hasattr(self, "export_validation_label"):
             self.export_validation_label.configure(text=msg)
@@ -1540,14 +1748,15 @@ class App(ctk.CTk):
             self.out_file_row.grid_remove()
             self.recent_sheets_row.grid()
             self.out_sheets_row.grid()
-            self.oauth_row.grid()
+            self.google_auth_row.grid()
 
         else:  # csv
             self.recent_sheets_row.grid_remove()
             self.out_sheets_row.grid_remove()
-            self.oauth_row.grid_remove()
+            self.google_auth_row.grid_remove()
             self.out_file_row.grid()
         self._update_recent_sheets_ui()
+        self._update_google_auth_status()
         self._run_live_validation()
 
     def _refresh_html_ui(self):
@@ -1556,16 +1765,17 @@ class App(ctk.CTk):
             self.html_csv_row.grid_remove()
             self.html_recent_sheets_row.grid()
             self.html_sheets_row.grid()
-            self.html_oauth_row.grid()
+            self.html_google_auth_row.grid()
             self.log2.delete("1.0", "end")
 
         else:  # csv
             self.html_recent_sheets_row.grid_remove()
             self.html_sheets_row.grid_remove()
-            self.html_oauth_row.grid_remove()
+            self.html_google_auth_row.grid_remove()
             self.html_csv_row.grid()
             self.log2.delete("1.0", "end")
         self._update_recent_sheets_ui()
+        self._update_google_auth_status()
         self._run_live_validation()
     def _needs_oauth(self) -> bool:
         return self.output_mode.get() == "sheets_oauth"
@@ -1593,7 +1803,7 @@ class App(ctk.CTk):
                 return False, "Omple el títol del Google Sheet."
             if not self.output_sheet_tab.get().strip():
                 return False, "Omple el nom de la pestanya."
-            oauth_file = self.oauth_client_json.get().strip() or "oauth_client.json"
+            oauth_file = self._oauth_client_path()
             if not os.path.exists(oauth_file):
                 return False, f"Falta el fitxer OAuth: {oauth_file}"
 
@@ -1615,7 +1825,7 @@ class App(ctk.CTk):
                 return False, "Omple el títol del Google Sheet."
             if not self.html_sheet_tab.get().strip():
                 return False, "Omple el nom de la pestanya."
-            oauth_file = self.oauth_client_json.get().strip() or "oauth_client.json"
+            oauth_file = self._oauth_client_path()
             if not os.path.exists(oauth_file):
                 return False, f"Falta el fitxer OAuth: {oauth_file}"
             return True, ""
@@ -1700,8 +1910,8 @@ class App(ctk.CTk):
                 if output_mode == "sheets_oauth" else None,
                 output_file_path=self.output_file_path.get().strip()
                 if output_mode == "csv" else None,
-                oauth_client_json=self.oauth_client_json.get().strip() or "oauth_client.json",
-                token_file=self.token_file.get().strip() or "token.json",
+                oauth_client_json=self._oauth_client_path(),
+                token_file=self._token_file_path(),
                 log=self.ui_log,
                 debug=False,
                 progress_cb=progress_cb,
@@ -1768,8 +1978,8 @@ class App(ctk.CTk):
                         rows=sheet_rows,
                         spreadsheet_title=self.html_sheet_title.get().strip(),
                         worksheet_name=self.html_sheet_tab.get().strip(),
-                        oauth_client_json=self.oauth_client_json.get().strip() or "oauth_client.json",
-                        token_file=self.token_file.get().strip() or "token.json",
+                        oauth_client_json=self._oauth_client_path(),
+                        token_file=self._token_file_path(),
                         log=self.ui_log2,
                     )
                     self.ui_log2(
@@ -1790,8 +2000,8 @@ class App(ctk.CTk):
                 input_csv_path=self.html_input_csv_path.get().strip() if mode == "csv" else None,
                 sheet_title=self.html_sheet_title.get().strip() if mode == "sheets_oauth" else None,
                 sheet_tab=self.html_sheet_tab.get().strip() if mode == "sheets_oauth" else None,
-                oauth_client_json=self.oauth_client_json.get().strip() or "oauth_client.json",
-                token_file=self.token_file.get().strip() or "token.json",
+                oauth_client_json=self._oauth_client_path(),
+                token_file=self._token_file_path(),
                 log=self.ui_log2,
             )
 
@@ -1823,8 +2033,8 @@ class App(ctk.CTk):
                 input_csv_path=self.html_input_csv_path.get().strip() if mode == "csv" else None,
                 sheet_title=self.html_sheet_title.get().strip() if mode == "sheets_oauth" else None,
                 sheet_tab=self.html_sheet_tab.get().strip() if mode == "sheets_oauth" else None,
-                oauth_client_json=self.oauth_client_json.get().strip() or "oauth_client.json",
-                token_file=self.token_file.get().strip() or "token.json",
+                oauth_client_json=self._oauth_client_path(),
+                token_file=self._token_file_path(),
                 log=self.ui_log2,
             )
             html_text = result.get("html_text", "") if isinstance(result, dict) else ""
