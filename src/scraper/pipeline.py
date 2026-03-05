@@ -1,5 +1,7 @@
 ﻿import csv
 import json
+import re
+import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
@@ -96,6 +98,57 @@ def export_genweb_json(blocks: List[Dict[str, Any]], output_path: str):
         json.dump(blocks, f, ensure_ascii=False, indent=2)
 
 
+def _normalize_for_compare(value: str) -> str:
+    txt = (value or "").strip().lower()
+    if not txt:
+        return ""
+    txt = unicodedata.normalize("NFKD", txt)
+    txt = "".join(ch for ch in txt if not unicodedata.combining(ch))
+    txt = re.sub(r"[^a-z0-9]+", "", txt)
+    return txt
+
+
+def _get_row_value_case_insensitive(row: Dict[str, str], wanted_key: str) -> str:
+    wanted = _normalize_for_compare(wanted_key)
+    for k, v in row.items():
+        if _normalize_for_compare(k) == wanted:
+            return (v or "").strip()
+    return ""
+
+
+def _validate_approved_subtopics(approved_rows: List[Dict[str, str]], row_numbers: Dict[int, int]) -> List[str]:
+    placeholder_values = {
+        "",
+        "-",
+        "--",
+        "n/a",
+        "na",
+        "none",
+        "null",
+        "sense",
+        "sense subtopic",
+        "tbd",
+        "?",
+    }
+    errors: List[str] = []
+    for row in approved_rows:
+        row_num = row_numbers.get(id(row), 0)
+        label = f"Fila {row_num}" if row_num else "Fila desconeguda"
+        topic = _get_row_value_case_insensitive(row, "Tema")
+        subtopic = _get_row_value_case_insensitive(row, "Subtopic")
+        subtopic_plain = (subtopic or "").strip().lower()
+
+        if not subtopic:
+            errors.append(f"{label}: falta Subtopic (Tema='{topic}').")
+            continue
+        if subtopic_plain in placeholder_values:
+            errors.append(f"{label}: Subtopic invalid ('{subtopic}').")
+            continue
+        if topic and _normalize_for_compare(subtopic) == _normalize_for_compare(topic):
+            errors.append(f"{label}: Subtopic no pot ser igual a Tema ('{topic}').")
+    return errors
+
+
 def run_pipeline(
     input_mode: str,
     output_mode: str,
@@ -141,7 +194,8 @@ def run_pipeline(
         if not output_file_path:
             raise RuntimeError("Falta el fitxer JSON de sortida.")
         export_genweb_json(blocks, output_file_path)
-        _log(f"Genweb JSON written: {output_file_path}")    elif output_mode == "sheets_oauth":
+        _log(f"Genweb JSON written: {output_file_path}")
+    elif output_mode == "sheets_oauth":
         if not (output_sheet_title and output_sheet_tab):
             raise RuntimeError("Falta el tÃ­tol o la pestanya del Google Sheet de sortida.")
         export_rows_to_google_sheets_oauth(
@@ -202,22 +256,35 @@ def run_approved_to_html_pipeline(
         raise RuntimeError("input_mode ha de ser 'csv' o 'sheets_oauth'.")
 
     _log(f"Files llegides: {len(rows)}")
+    row_numbers = {id(row): idx for idx, row in enumerate(rows, start=2)}
     approved = filter_approved(rows)
     _log(f"Files aprovades: {len(approved)}")
 
+    subtopic_errors = _validate_approved_subtopics(approved, row_numbers)
+    if subtopic_errors:
+        preview = "\n".join(f"- {e}" for e in subtopic_errors[:15])
+        more = ""
+        if len(subtopic_errors) > 15:
+            more = f"\n- ... i {len(subtopic_errors) - 15} incidencia(es) mes."
+        raise RuntimeError(
+            "Control subtopics: s'han detectat incidencies en files aprovades.\n"
+            "Corregeix el CSV/Google Sheet abans de generar el codi font.\n"
+            f"{preview}{more}"
+        )
+
     approved.sort(
         key=lambda r: (
-            (r.get("Subtopic") or r.get("subtopic") or r.get("Tema") or "").lower(),
-            (r.get("Pregunta") or r.get("pregunta") or "").lower(),
+            (_get_row_value_case_insensitive(r, "Subtopic") or _get_row_value_case_insensitive(r, "Tema")).lower(),
+            _get_row_value_case_insensitive(r, "Pregunta").lower(),
         )
     )
     html_text = render_upc_faqaccordion(approved)
 
     topics = len(
         {
-            (r.get("Subtopic") or r.get("subtopic") or r.get("Tema") or "").strip()
+            (_get_row_value_case_insensitive(r, "Subtopic") or _get_row_value_case_insensitive(r, "Tema")).strip()
             for r in approved
-            if (r.get("Subtopic") or r.get("subtopic") or r.get("Tema") or "").strip()
+            if (_get_row_value_case_insensitive(r, "Subtopic") or _get_row_value_case_insensitive(r, "Tema")).strip()
         }
     )
     _log(f"Fitxer generat: {output_path}")
@@ -228,4 +295,3 @@ def run_approved_to_html_pipeline(
         "topics": topics,
         "html_text": html_text,
     }
-
