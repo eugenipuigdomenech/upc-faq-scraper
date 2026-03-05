@@ -99,9 +99,24 @@ def file_row(
     return entry
 
 
-def text_row(parent, row, label, var):
+def text_row(
+    parent,
+    row,
+    label,
+    var,
+    placeholder_text=None,
+    placeholder_text_color=None,
+    font=None,
+):
     ctk.CTkLabel(parent, text=label).grid(row=row, column=0, padx=10, pady=6, sticky="w")
-    entry = ctk.CTkEntry(parent, textvariable=var)
+    kwargs = {"textvariable": var}
+    if placeholder_text is not None:
+        kwargs["placeholder_text"] = placeholder_text
+    if placeholder_text_color is not None:
+        kwargs["placeholder_text_color"] = placeholder_text_color
+    if font is not None:
+        kwargs["font"] = font
+    entry = ctk.CTkEntry(parent, **kwargs)
     entry.grid(row=row, column=1, padx=6, pady=6, sticky="ew")
     ctk.CTkLabel(parent, text="").grid(row=row, column=2, padx=6, pady=6)
     return entry
