@@ -238,7 +238,103 @@ def export_rows_to_google_sheets_oauth(
         )
         return "='Familes'!$B$2:$B$4"
 
-    def _apply_review_sheet_formatting(worksheet):
+    def _build_review_table_columns() -> List[Dict[str, object]]:
+        dropdown_values = [
+            {"userEnteredValue": "Aprovat"},
+            {"userEnteredValue": "Pendent"},
+            {"userEnteredValue": "Rebutjat"},
+        ]
+        columns: List[Dict[str, object]] = []
+        for idx, name in enumerate(SHEETS_COLUMNS):
+            column: Dict[str, object] = {
+                "columnIndex": idx,
+                "columnName": name,
+                "columnType": "TEXT",
+            }
+            if idx == 4:
+                column["columnType"] = "DROPDOWN"
+                column["dataValidationRule"] = {
+                    "condition": {
+                        "type": "ONE_OF_LIST",
+                        "values": dropdown_values,
+                    }
+                }
+            columns.append(column)
+        return columns
+
+    def _sync_review_table_with_status_chips(worksheet, used_row_count: int):
+        sheet_id = worksheet.id
+        table_name = f"UPCFAQTable_{sheet_id}"
+        table_range = {
+            "sheetId": sheet_id,
+            "startRowIndex": 0,
+            "endRowIndex": max(2, used_row_count),
+            "startColumnIndex": 0,
+            "endColumnIndex": len(SHEETS_COLUMNS),
+        }
+
+        meta = worksheet.spreadsheet.fetch_sheet_metadata()
+        sheet_meta = next(
+            (
+                sh_meta
+                for sh_meta in meta.get("sheets", [])
+                if sh_meta.get("properties", {}).get("sheetId") == sheet_id
+            ),
+            {},
+        )
+        existing_tables = sheet_meta.get("tables", []) or []
+        target_table = next((table for table in existing_tables if table.get("name") == table_name), None)
+        if target_table is None:
+            target_table = next(
+                (
+                    table
+                    for table in existing_tables
+                    if table.get("range", {}).get("startColumnIndex") == 0
+                    and table.get("range", {}).get("endColumnIndex") == len(SHEETS_COLUMNS)
+                ),
+                None,
+            )
+
+        table_payload: Dict[str, object] = {
+            "name": table_name,
+            "range": table_range,
+            "rowsProperties": {
+                "headerColorStyle": {"rgbColor": {"red": 1, "green": 1, "blue": 1}},
+                "firstBandColorStyle": {"rgbColor": {"red": 1, "green": 1, "blue": 1}},
+                "secondBandColorStyle": {"rgbColor": {"red": 1, "green": 1, "blue": 1}},
+            },
+            "columnProperties": _build_review_table_columns(),
+        }
+
+        if target_table and target_table.get("tableId"):
+            table_payload["tableId"] = target_table["tableId"]
+            worksheet.spreadsheet.batch_update(
+                {
+                    "requests": [
+                        {
+                            "updateTable": {
+                                "table": table_payload,
+                                "fields": "name,range,rowsProperties,columnProperties",
+                            }
+                        }
+                    ]
+                }
+            )
+            return
+
+        worksheet.spreadsheet.batch_update(
+            {
+                "requests": [
+                    {
+                        "addTable": {
+                            "table": table_payload,
+                        }
+                    }
+                ]
+            }
+        )
+
+    def _apply_review_sheet_formatting(worksheet, used_row_count: int):
         sheet_id = worksheet.id
         row_count = max(2, int(getattr(worksheet, "row_count", 1000) or 1000))
         col_count = max(len(SHEETS_COLUMNS), int(getattr(worksheet, "col_count", len(SHEETS_COLUMNS)) or len(SHEETS_COLUMNS)))
@@ -287,17 +383,25 @@ def export_rows_to_google_sheets_oauth(
                     },
                     "cell": {
                         "userEnteredFormat": {
-                            "textFormat": {"bold": True},
+                            "backgroundColor": {"red": 0.95, "green": 0.95, "blue": 0.95},
+                            "textFormat": {
+                                "bold": True,
+                                "foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0},
+                            },
                         }
                     },
-                    "fields": "userEnteredFormat.textFormat.bold",
+                    "fields": (
+                        "userEnteredFormat.backgroundColor,"
+                        "userEnteredFormat.textFormat.bold,"
+                        "userEnteredFormat.textFormat.foregroundColor"
+                    ),
                 }
             },
             {
                 "repeatCell": {
                     "range": {
                         "sheetId": sheet_id,
-                        "startRowIndex": 1,
+                        "startRowIndex": 0,
                         "endRowIndex": row_count,
                         "startColumnIndex": 0,
                         "endColumnIndex": col_count,
@@ -306,120 +410,260 @@ def export_rows_to_google_sheets_oauth(
                         "userEnteredFormat": {
                             "horizontalAlignment": "LEFT",
                             "verticalAlignment": "TOP",
+                            "wrapStrategy": "WRAP",
                         }
                     },
-                    "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment",
+                    "fields": (
+                        "userEnteredFormat.horizontalAlignment,"
+                        "userEnteredFormat.verticalAlignment,"
+                        "userEnteredFormat.wrapStrategy"
+                    ),
+                }
+            },
+            {
+                "autoResizeDimensions": {
+                    "dimensions": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 0,
+                        "endIndex": col_count,
+                    }
+                }
+            },
+            {
+                "autoResizeDimensions": {
+                    "dimensions": {
+                        "sheetId": sheet_id,
+                        "dimension": "ROWS",
+                        "startIndex": 0,
+                        "endIndex": row_count,
+                    }
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 0,
+                        "endIndex": 1,
+                    },
+                    "properties": {
+                        "pixelSize": 140,
+                    },
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 5,
+                        "endIndex": 6,
+                    },
+                    "properties": {
+                        "pixelSize": 150,
+                    },
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 6,
+                        "endIndex": 7,
+                    },
+                    "properties": {
+                        "pixelSize": 170,
+                    },
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 7,
+                        "endIndex": 8,
+                    },
+                    "properties": {
+                        "pixelSize": 180,
+                    },
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 9,
+                        "endIndex": 10,
+                    },
+                    "properties": {
+                        "pixelSize": 220,
+                    },
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 10,
+                        "endIndex": 11,
+                    },
+                    "properties": {
+                        "pixelSize": 170,
+                    },
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 2,
+                        "endIndex": 3,
+                    },
+                    "properties": {
+                        "pixelSize": 320,
+                    },
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 4,
+                        "endIndex": 5,
+                    },
+                    "properties": {
+                        "pixelSize": 110,
+                    },
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 3,
+                        "endIndex": 4,
+                    },
+                    "properties": {
+                        "pixelSize": 800,
+                    },
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "setDataValidation": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": 1,
+                        "endRowIndex": row_count,
+                        "startColumnIndex": 4,
+                        "endColumnIndex": 5,
+                    }
+                }
+            },
+            {
+                "addConditionalFormatRule": {
+                    "index": 0,
+                    "rule": {
+                        "ranges": [
+                            {
+                                "sheetId": sheet_id,
+                                "startRowIndex": 1,
+                                "endRowIndex": row_count,
+                                "startColumnIndex": 4,
+                                "endColumnIndex": 5,
+                            }
+                        ],
+                        "booleanRule": {
+                            "condition": {
+                                "type": "TEXT_EQ",
+                                "values": [{"userEnteredValue": "Aprovat"}],
+                            },
+                            "format": {
+                                "backgroundColor": {"red": 0.8314, "green": 0.9294, "blue": 0.7373},
+                                "textFormat": {
+                                    "foregroundColor": {"red": 0.10, "green": 0.50, "blue": 0.10}
+                                },
+                            },
+                        },
+                    }
+                }
+            },
+            {
+                "addConditionalFormatRule": {
+                    "index": 1,
+                    "rule": {
+                        "ranges": [
+                            {
+                                "sheetId": sheet_id,
+                                "startRowIndex": 1,
+                                "endRowIndex": row_count,
+                                "startColumnIndex": 4,
+                                "endColumnIndex": 5,
+                            }
+                        ],
+                        "booleanRule": {
+                            "condition": {
+                                "type": "TEXT_EQ",
+                                "values": [{"userEnteredValue": "Pendent"}],
+                            },
+                            "format": {
+                                "backgroundColor": {"red": 1.0, "green": 0.8980, "blue": 0.6275},
+                                "textFormat": {
+                                    "foregroundColor": {"red": 0.65, "green": 0.50, "blue": 0.00}
+                                },
+                            },
+                        },
+                    }
+                }
+            },
+            {
+                "addConditionalFormatRule": {
+                    "index": 2,
+                    "rule": {
+                        "ranges": [
+                            {
+                                "sheetId": sheet_id,
+                                "startRowIndex": 1,
+                                "endRowIndex": row_count,
+                                "startColumnIndex": 4,
+                                "endColumnIndex": 5,
+                            }
+                        ],
+                        "booleanRule": {
+                            "condition": {
+                                "type": "TEXT_EQ",
+                                "values": [{"userEnteredValue": "Rebutjat"}],
+                            },
+                            "format": {
+                                "backgroundColor": {"red": 1.0, "green": 0.8118, "blue": 0.7882},
+                                "textFormat": {
+                                    "foregroundColor": {"red": 0.75, "green": 0.12, "blue": 0.12}
+                                },
+                            },
+                        },
+                    }
                 }
             },
         ]
-
-        status_range_formula = _ensure_status_options_range(worksheet.spreadsheet)
-        requests.extend(
-            [
-                {
-                    "setDataValidation": {
-                        "range": {
-                            "sheetId": sheet_id,
-                            "startRowIndex": 1,
-                            "endRowIndex": row_count,
-                            "startColumnIndex": 4,
-                            "endColumnIndex": 5,
-                        },
-                        "rule": {
-                            "condition": {
-                                "type": "ONE_OF_RANGE",
-                                "values": [{"userEnteredValue": status_range_formula}],
-                            },
-                            "strict": True,
-                            "showCustomUi": True,
-                        },
-                    }
-                },
-                {
-                    "addConditionalFormatRule": {
-                        "index": 0,
-                        "rule": {
-                            "ranges": [
-                                {
-                                    "sheetId": sheet_id,
-                                    "startRowIndex": 1,
-                                    "endRowIndex": row_count,
-                                    "startColumnIndex": 4,
-                                    "endColumnIndex": 5,
-                                }
-                            ],
-                            "booleanRule": {
-                                "condition": {
-                                    "type": "TEXT_EQ",
-                                    "values": [{"userEnteredValue": "Aprovat"}],
-                                },
-                                "format": {
-                                    "textFormat": {
-                                        "foregroundColor": {"red": 0.10, "green": 0.50, "blue": 0.10}
-                                    }
-                                },
-                            },
-                        },
-                    }
-                },
-                {
-                    "addConditionalFormatRule": {
-                        "index": 1,
-                        "rule": {
-                            "ranges": [
-                                {
-                                    "sheetId": sheet_id,
-                                    "startRowIndex": 1,
-                                    "endRowIndex": row_count,
-                                    "startColumnIndex": 4,
-                                    "endColumnIndex": 5,
-                                }
-                            ],
-                            "booleanRule": {
-                                "condition": {
-                                    "type": "TEXT_EQ",
-                                    "values": [{"userEnteredValue": "Pendent"}],
-                                },
-                                "format": {
-                                    "textFormat": {
-                                        "foregroundColor": {"red": 0.65, "green": 0.50, "blue": 0.00}
-                                    }
-                                },
-                            },
-                        },
-                    }
-                },
-                {
-                    "addConditionalFormatRule": {
-                        "index": 2,
-                        "rule": {
-                            "ranges": [
-                                {
-                                    "sheetId": sheet_id,
-                                    "startRowIndex": 1,
-                                    "endRowIndex": row_count,
-                                    "startColumnIndex": 4,
-                                    "endColumnIndex": 5,
-                                }
-                            ],
-                            "booleanRule": {
-                                "condition": {
-                                    "type": "TEXT_EQ",
-                                    "values": [{"userEnteredValue": "Rebutjat"}],
-                                },
-                                "format": {
-                                    "textFormat": {
-                                        "foregroundColor": {"red": 0.75, "green": 0.12, "blue": 0.12}
-                                    }
-                                },
-                            },
-                        },
-                    }
-                },
-            ]
-        )
-
         worksheet.spreadsheet.batch_update({"requests": requests})
+        _sync_review_table_with_status_chips(worksheet, used_row_count)
 
     client = get_oauth_client(oauth_client_json=oauth_client_json, token_file=token_file)
 
@@ -445,9 +689,16 @@ def export_rows_to_google_sheets_oauth(
     is_truly_empty = not values or all((not r) or all((c or "").strip() == "" for c in r) for r in values)
     if is_truly_empty:
         ws.clear()
-        ws.append_row(SHEETS_COLUMNS, value_input_option="RAW")
         _log("Capçalera afegida")
-        values = [SHEETS_COLUMNS]
+
+    ws.update(
+        f"A1:{gspread.utils.rowcol_to_a1(1, len(SHEETS_COLUMNS))}",
+        [SHEETS_COLUMNS],
+        value_input_option="RAW",
+    )
+    values = ws.get_all_values()
+    if False:
+        _log("Capçalera afegida")
 
     first_created: dict[tuple[str, str, str, str], str] = {}
     existing_answers: dict[tuple[str, str, str, str], set[str]] = {}
@@ -495,6 +746,8 @@ def export_rows_to_google_sheets_oauth(
     else:
         _log("No s'ha afegit res (tot eren duplicats de resposta).")
 
+    used_row_count = max(1, len(values) + len(to_append))
+
     try:
         ws.update_acell("K1", f"LAST_WRITE: {now_ts}")
     except Exception:
@@ -502,8 +755,8 @@ def export_rows_to_google_sheets_oauth(
         ws.update_acell("I1", f"LAST_WRITE: {now_ts}")
 
     try:
-        _apply_review_sheet_formatting(ws)
-        _log("Format aplicat: capçalera fixa+negreta, desplegable d'estat i colors.")
+        _apply_review_sheet_formatting(ws, used_row_count)
+        _log("Format aplicat: capçalera fixa+negreta, xips d'estat, wrap i autoajust.")
     except Exception as e:
         _log(f"No s'ha pogut aplicar el format visual de la pestanya: {_format_google_error(e)}")
 
