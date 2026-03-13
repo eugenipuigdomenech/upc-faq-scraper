@@ -16,6 +16,20 @@ except ImportError:
     from constants import OAUTH_SCOPES, SHEETS_COLUMNS
 
 
+SHEETS_TOPIC_OPTIONS = [
+    "Dobles Graus",
+    "Doctoral Studies",
+    "Doctorats",
+    "Final Thesis",
+    "Guidance (MEM/MASE)",
+    "Masters",
+    "Mobilitat",
+    "Orientació",
+    "Pràctiques empresa",
+    "TFE",
+]
+
+
 def get_oauth_client(oauth_client_json="oauth_client.json", token_file="token.json"):
     def _resolve_token_path(path: str) -> str:
         p = (path or "").strip() or "token.json"
@@ -221,28 +235,25 @@ def export_rows_to_google_sheets_oauth(
         v = (value or "").strip()
         return v if v in {"Aprovat", "Pendent", "Rebutjat"} else "Pendent"
 
-    def _ensure_status_options_range(spreadsheet) -> str:
-        """
-        Garanteix una pestanya 'Familes' amb el catàleg d'estats a B2:B4
-        per poder fer validació 'Menú desplegable (d'un interval)'.
-        """
-        try:
-            ws_ref = spreadsheet.worksheet("Familes")
-        except Exception:
-            ws_ref = spreadsheet.add_worksheet(title="Familes", rows=20, cols=5)
+    def _collect_subtopic_options(existing_rows: List[List[str]], pending_rows: List[List[str]]) -> List[str]:
+        options: List[str] = []
+        seen: set[str] = set()
+        for row in list(existing_rows) + list(pending_rows):
+            value = _norm(row[1]) if len(row) > 1 else ""
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            options.append(value)
+        return options
 
-        ws_ref.update(
-            "B1:B4",
-            [["Estat"], ["Aprovat"], ["Pendent"], ["Rebutjat"]],
-            value_input_option="RAW",
-        )
-        return "='Familes'!$B$2:$B$4"
-
-    def _build_review_table_columns() -> List[Dict[str, object]]:
-        dropdown_values = [
-            {"userEnteredValue": "Aprovat"},
-            {"userEnteredValue": "Pendent"},
-            {"userEnteredValue": "Rebutjat"},
+    def _build_review_table_columns(subtopic_options: List[str] | None = None) -> List[Dict[str, object]]:
+        topic_dropdown_values = [
+            {"userEnteredValue": topic}
+            for topic in SHEETS_TOPIC_OPTIONS
+        ]
+        subtopic_dropdown_values = [
+            {"userEnteredValue": subtopic}
+            for subtopic in (subtopic_options or [])
         ]
         columns: List[Dict[str, object]] = []
         for idx, name in enumerate(SHEETS_COLUMNS):
@@ -251,18 +262,30 @@ def export_rows_to_google_sheets_oauth(
                 "columnName": name,
                 "columnType": "TEXT",
             }
-            if idx == 4:
+            if idx == 0:
                 column["columnType"] = "DROPDOWN"
                 column["dataValidationRule"] = {
                     "condition": {
                         "type": "ONE_OF_LIST",
-                        "values": dropdown_values,
+                        "values": topic_dropdown_values,
+                    }
+                }
+            if idx == 1 and subtopic_dropdown_values:
+                column["columnType"] = "DROPDOWN"
+                column["dataValidationRule"] = {
+                    "condition": {
+                        "type": "ONE_OF_LIST",
+                        "values": subtopic_dropdown_values,
                     }
                 }
             columns.append(column)
         return columns
 
-    def _sync_review_table_with_status_chips(worksheet, used_row_count: int):
+    def _sync_review_table_with_status_chips(
+        worksheet,
+        used_row_count: int,
+        subtopic_options: List[str] | None = None,
+    ):
         sheet_id = worksheet.id
         table_name = f"UPCFAQTable_{sheet_id}"
         table_range = {
@@ -299,11 +322,11 @@ def export_rows_to_google_sheets_oauth(
             "name": table_name,
             "range": table_range,
             "rowsProperties": {
-                "headerColorStyle": {"rgbColor": {"red": 1, "green": 1, "blue": 1}},
+                "headerColorStyle": {"rgbColor": {"red": 0.95, "green": 0.95, "blue": 0.95}},
                 "firstBandColorStyle": {"rgbColor": {"red": 1, "green": 1, "blue": 1}},
                 "secondBandColorStyle": {"rgbColor": {"red": 1, "green": 1, "blue": 1}},
             },
-            "columnProperties": _build_review_table_columns(),
+            "columnProperties": _build_review_table_columns(subtopic_options=subtopic_options),
         }
 
         if target_table and target_table.get("tableId"):
@@ -334,7 +357,53 @@ def export_rows_to_google_sheets_oauth(
             }
         )
 
-    def _apply_review_sheet_formatting(worksheet, used_row_count: int):
+    def _enforce_header_row_format(worksheet, col_count: int):
+        sheet_id = worksheet.id
+        worksheet.spreadsheet.batch_update(
+            {
+                "requests": [
+                    {
+                        "repeatCell": {
+                            "range": {
+                                "sheetId": sheet_id,
+                                "startRowIndex": 0,
+                                "endRowIndex": 1,
+                                "startColumnIndex": 0,
+                                "endColumnIndex": col_count,
+                            },
+                            "cell": {
+                                "userEnteredFormat": {
+                                    "backgroundColor": {
+                                        "red": 0.95,
+                                        "green": 0.95,
+                                        "blue": 0.95,
+                                    },
+                                    "textFormat": {
+                                        "bold": True,
+                                        "foregroundColor": {
+                                            "red": 0.0,
+                                            "green": 0.0,
+                                            "blue": 0.0,
+                                        },
+                                    },
+                                }
+                            },
+                            "fields": (
+                                "userEnteredFormat.backgroundColor,"
+                                "userEnteredFormat.textFormat.bold,"
+                                "userEnteredFormat.textFormat.foregroundColor"
+                            ),
+                        }
+                    }
+                ]
+            }
+        )
+
+    def _apply_review_sheet_formatting(
+        worksheet,
+        used_row_count: int,
+        subtopic_options: List[str] | None = None,
+    ):
         sheet_id = worksheet.id
         row_count = max(2, int(getattr(worksheet, "row_count", 1000) or 1000))
         col_count = max(len(SHEETS_COLUMNS), int(getattr(worksheet, "col_count", len(SHEETS_COLUMNS)) or len(SHEETS_COLUMNS)))
@@ -418,6 +487,47 @@ def export_rows_to_google_sheets_oauth(
                         "userEnteredFormat.verticalAlignment,"
                         "userEnteredFormat.wrapStrategy"
                     ),
+                }
+            },
+            {
+                "updateBorders": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": 0,
+                        "endRowIndex": max(1, used_row_count),
+                        "startColumnIndex": 0,
+                        "endColumnIndex": col_count,
+                    },
+                    "top": {
+                        "style": "SOLID",
+                        "width": 1,
+                        "color": {"red": 0.84, "green": 0.86, "blue": 0.88},
+                    },
+                    "bottom": {
+                        "style": "SOLID",
+                        "width": 1,
+                        "color": {"red": 0.84, "green": 0.86, "blue": 0.88},
+                    },
+                    "left": {
+                        "style": "SOLID",
+                        "width": 1,
+                        "color": {"red": 0.84, "green": 0.86, "blue": 0.88},
+                    },
+                    "right": {
+                        "style": "SOLID",
+                        "width": 1,
+                        "color": {"red": 0.84, "green": 0.86, "blue": 0.88},
+                    },
+                    "innerHorizontal": {
+                        "style": "SOLID",
+                        "width": 1,
+                        "color": {"red": 0.84, "green": 0.86, "blue": 0.88},
+                    },
+                    "innerVertical": {
+                        "style": "SOLID",
+                        "width": 1,
+                        "color": {"red": 0.84, "green": 0.86, "blue": 0.88},
+                    },
                 }
             },
             {
@@ -566,199 +676,65 @@ def export_rows_to_google_sheets_oauth(
                     "fields": "pixelSize",
                 }
             },
-            {
-                "setDataValidation": {
-                    "range": {
-                        "sheetId": sheet_id,
-                        "startRowIndex": 1,
-                        "endRowIndex": row_count,
-                        "startColumnIndex": 4,
-                        "endColumnIndex": 5,
-                    }
-                }
-            },
-            {
-                "addConditionalFormatRule": {
-                    "index": 0,
-                    "rule": {
-                        "ranges": [
-                            {
-                                "sheetId": sheet_id,
-                                "startRowIndex": 1,
-                                "endRowIndex": row_count,
-                                "startColumnIndex": 4,
-                                "endColumnIndex": 5,
-                            }
-                        ],
-                        "booleanRule": {
-                            "condition": {
-                                "type": "TEXT_EQ",
-                                "values": [{"userEnteredValue": "Aprovat"}],
-                            },
-                            "format": {
-                                "backgroundColor": {"red": 0.8314, "green": 0.9294, "blue": 0.7373},
-                                "textFormat": {
-                                    "foregroundColor": {"red": 0.10, "green": 0.50, "blue": 0.10}
-                                },
-                            },
-                        },
-                    }
-                }
-            },
-            {
-                "addConditionalFormatRule": {
-                    "index": 1,
-                    "rule": {
-                        "ranges": [
-                            {
-                                "sheetId": sheet_id,
-                                "startRowIndex": 1,
-                                "endRowIndex": row_count,
-                                "startColumnIndex": 4,
-                                "endColumnIndex": 5,
-                            }
-                        ],
-                        "booleanRule": {
-                            "condition": {
-                                "type": "TEXT_EQ",
-                                "values": [{"userEnteredValue": "Pendent"}],
-                            },
-                            "format": {
-                                "backgroundColor": {"red": 1.0, "green": 0.8980, "blue": 0.6275},
-                                "textFormat": {
-                                    "foregroundColor": {"red": 0.65, "green": 0.50, "blue": 0.00}
-                                },
-                            },
-                        },
-                    }
-                }
-            },
-            {
-                "addConditionalFormatRule": {
-                    "index": 2,
-                    "rule": {
-                        "ranges": [
-                            {
-                                "sheetId": sheet_id,
-                                "startRowIndex": 1,
-                                "endRowIndex": row_count,
-                                "startColumnIndex": 4,
-                                "endColumnIndex": 5,
-                            }
-                        ],
-                        "booleanRule": {
-                            "condition": {
-                                "type": "TEXT_EQ",
-                                "values": [{"userEnteredValue": "Rebutjat"}],
-                            },
-                            "format": {
-                                "backgroundColor": {"red": 1.0, "green": 0.8118, "blue": 0.7882},
-                                "textFormat": {
-                                    "foregroundColor": {"red": 0.75, "green": 0.12, "blue": 0.12}
-                                },
-                            },
-                        },
-                    }
-                }
-            },
         ]
         worksheet.spreadsheet.batch_update({"requests": requests})
-        _sync_review_table_with_status_chips(worksheet, used_row_count)
+        _sync_review_table_with_status_chips(
+            worksheet,
+            used_row_count,
+            subtopic_options=subtopic_options,
+        )
+        _enforce_header_row_format(worksheet, col_count)
 
     client = get_oauth_client(oauth_client_json=oauth_client_json, token_file=token_file)
 
     try:
         sh = _open_sheet_lenient(client, spreadsheet_title, log=log)
         _log(f"Spreadsheet obert: {sh.title}")
-    except Exception:
-        sh = client.create(spreadsheet_title)
-        _log(f"Spreadsheet creat: {spreadsheet_title}")
+    except Exception as e:
+        raise RuntimeError(
+            f"No s'ha pogut obrir el Google Sheet '{spreadsheet_title}': {_format_google_error(e)}"
+        ) from e
 
     try:
         ws = sh.worksheet(worksheet_name)
         _log(f"Pestanya oberta: {worksheet_name}")
-    except Exception:
-        ws = sh.add_worksheet(
-            title=worksheet_name,
-            rows=max(1000, len(rows) + 10),
-            cols=max(11, len(SHEETS_COLUMNS)),
-        )
-        _log(f"Pestanya creada: {worksheet_name}")
+    except Exception as e:
+        raise RuntimeError(
+            f"No s'ha trobat la pestanya '{worksheet_name}' al sheet '{spreadsheet_title}': "
+            f"{_format_google_error(e)}"
+        ) from e
 
-    values = ws.get_all_values()
-    is_truly_empty = not values or all((not r) or all((c or "").strip() == "" for c in r) for r in values)
-    if is_truly_empty:
-        ws.clear()
-        _log("Capçalera afegida")
-
-    ws.update(
-        f"A1:{gspread.utils.rowcol_to_a1(1, len(SHEETS_COLUMNS))}",
-        [SHEETS_COLUMNS],
-        value_input_option="RAW",
-    )
-    values = ws.get_all_values()
-    if False:
-        _log("Capçalera afegida")
-
-    first_created: dict[tuple[str, str, str, str], str] = {}
-    existing_answers: dict[tuple[str, str, str, str], set[str]] = {}
-
-    for r in values[1:]:
-        k = _qkey(r)
-        created = (r[5] if len(r) > 5 else "").strip()
-        if created and k not in first_created:
-            first_created[k] = created
-
-        a = _ans(r)
-        if a:
-            existing_answers.setdefault(k, set()).add(a)
-
+    prepared_rows: List[List[str]] = []
     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    to_append: List[List[str]] = []
-    skipped = 0
 
     for r in rows:
-        rr = r.copy()
+        rr = list(r[:len(SHEETS_COLUMNS)])
+        if len(rr) < len(SHEETS_COLUMNS):
+            rr.extend([""] * (len(SHEETS_COLUMNS) - len(rr)))
         if len(rr) > 3:
             rr[3] = _html_to_sheet_text(rr[3])
         if len(rr) > 4:
             rr[4] = _ensure_status_default(rr[4])
-        k = _qkey(rr)
-        a = _ans(rr)
+        if len(rr) > 5 and not (rr[5] or "").strip():
+            rr[5] = now_ts
+        if len(rr) > 6:
+            rr[6] = now_ts
+        prepared_rows.append(rr)
 
-        rr[5] = first_created.get(k, rr[5] or now_ts)
-        rr[6] = now_ts
+    last_column = gspread.utils.rowcol_to_a1(1, len(SHEETS_COLUMNS)).rstrip("1")
+    clear_until_row = max(int(getattr(ws, "row_count", 2) or 2), len(prepared_rows) + 1, 2)
+    ws.batch_clear([f"A2:{last_column}{clear_until_row}"])
 
-        seen = existing_answers.setdefault(k, set())
-        if a in seen:
-            skipped += 1
-            continue
-
-        seen.add(a)
-        first_created.setdefault(k, rr[4])
-        to_append.append(rr)
-
-    _log(f"Saltades (mateixa resposta): {skipped} | Noves (resposta diferent): {len(to_append)}")
-
-    if to_append:
-        ws.append_rows(to_append, value_input_option="RAW")
-        _log(f"Rows appended: {len(to_append)}")
+    if prepared_rows:
+        end_row = len(prepared_rows) + 1
+        ws.update(
+            f"A2:{last_column}{end_row}",
+            prepared_rows,
+            value_input_option="RAW",
+        )
+        _log(f"Contingut bolcat a la plantilla: {len(prepared_rows)} files.")
     else:
-        _log("No s'ha afegit res (tot eren duplicats de resposta).")
-
-    used_row_count = max(1, len(values) + len(to_append))
-
-    try:
-        ws.update_acell("K1", f"LAST_WRITE: {now_ts}")
-    except Exception:
-        # Fallback per pestanyes antigues amb menys columnes.
-        ws.update_acell("I1", f"LAST_WRITE: {now_ts}")
-
-    try:
-        _apply_review_sheet_formatting(ws, used_row_count)
-        _log("Format aplicat: capçalera fixa+negreta, xips d'estat, wrap i autoajust.")
-    except Exception as e:
-        _log(f"No s'ha pogut aplicar el format visual de la pestanya: {_format_google_error(e)}")
+        _log("No hi ha files noves per bolcar a la plantilla.")
 
 
 def read_rows_from_sheets_oauth(

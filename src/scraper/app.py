@@ -246,7 +246,7 @@ class App(ctk.CTk):
 
         # Output sheets
         self.output_sheet_title = ctk.StringVar()
-        self.output_sheet_tab = ctk.StringVar()
+        self.output_sheet_tab = ctk.StringVar(value="FAQs")
         self.output_sheet_title.trace_add("write", lambda *_: self._schedule_save_ui_state())
         self.output_sheet_tab.trace_add("write", lambda *_: self._schedule_save_ui_state())
         self.recent_sheets_titles: list[str] = []
@@ -874,7 +874,7 @@ class App(ctk.CTk):
 
         self.new_sheets_btn_1 = ctk.CTkButton(
             self.sheet_browse_wrap,
-            text="Nou Google Sheets",
+            text="Escriure manualment",
             width=220,
             command=self.new_google_sheets_scrape_clicked,
         )
@@ -1009,7 +1009,7 @@ class App(ctk.CTk):
         self.html_input_mode = ctk.StringVar(value="sheets_oauth")
         self.html_input_csv_path = ctk.StringVar()
         self.html_sheet_title = ctk.StringVar()
-        self.html_sheet_tab = ctk.StringVar()
+        self.html_sheet_tab = ctk.StringVar(value="FAQs")
         self.html_output_path = ctk.StringVar()
         self.html_input_mode.trace_add("write", lambda *_: self._schedule_save_ui_state())
         self.html_input_csv_path.trace_add("write", lambda *_: self._schedule_save_ui_state())
@@ -1184,7 +1184,7 @@ class App(ctk.CTk):
 
         self.new_sheets_btn_2 = ctk.CTkButton(
             self.html_sheet_browse_wrap,
-            text="Nou Google Sheets",
+            text="Escriure manualment",
             width=220,
             command=self.new_google_sheets_html_clicked,
         )
@@ -2278,7 +2278,9 @@ class App(ctk.CTk):
                 self.output_mode.set(output_mode)
                 self.output_file_path.set(self._sanitize_persisted_text(scrape_config.get("output_file_path")))
                 self.output_sheet_title.set(self._sanitize_persisted_text(scrape_config.get("output_sheet_title")))
-                self.output_sheet_tab.set(self._sanitize_persisted_text(scrape_config.get("output_sheet_tab")))
+                self.output_sheet_tab.set(
+                    self._sanitize_persisted_text(scrape_config.get("output_sheet_tab")) or "FAQs"
+                )
                 oauth_saved = (scrape_config.get("oauth_client_json") or "").strip()
                 token_saved = (scrape_config.get("token_file") or "").strip()
                 if oauth_saved and os.path.exists(oauth_saved):
@@ -2294,7 +2296,9 @@ class App(ctk.CTk):
                 self.html_input_mode.set(html_input_mode)
                 self.html_input_csv_path.set(self._sanitize_persisted_text(export_config.get("html_input_csv_path")))
                 self.html_sheet_title.set(self._sanitize_persisted_text(export_config.get("html_sheet_title")))
-                self.html_sheet_tab.set(self._sanitize_persisted_text(export_config.get("html_sheet_tab")))
+                self.html_sheet_tab.set(
+                    self._sanitize_persisted_text(export_config.get("html_sheet_tab")) or "FAQs"
+                )
 
             if isinstance(recent_google_sheets, list):
                 cleaned = []
@@ -3178,7 +3182,7 @@ class App(ctk.CTk):
                 return False, "En mode CSV, el fitxer de sortida ha d'acabar en .csv"
         else:  # sheets_oauth
             if not self._is_google_session_available():
-                return False, "Inicia sessió amb Google abans de triar o crear el Sheet."
+                return False, "Inicia sessió amb Google abans de triar el Sheet."
             if not self.output_sheet_title.get().strip():
                 return False, "Omple el títol del Google Sheet."
             if not self.output_sheet_tab.get().strip():
@@ -3202,7 +3206,7 @@ class App(ctk.CTk):
 
         if mode == "sheets_oauth":
             if not self._is_google_session_available():
-                return False, "Inicia sessió amb Google abans de triar o crear el Sheet."
+                return False, "Inicia sessió amb Google abans de triar el Sheet."
             if not self.html_sheet_title.get().strip():
                 return False, "Omple el títol del Google Sheet."
             if not self.html_sheet_tab.get().strip():
@@ -3871,20 +3875,25 @@ class App(ctk.CTk):
         rows = []
         for it in self.scraped_items:
             if it.approved_var.get():
-                export_topic = (it.topic_subtitle or "").strip() or (it.topic or "")
-                rows.append([export_topic, it.question, it.answer, it.source])
+                rows.append([
+                    (it.topic or "").strip(),
+                    (it.topic_subtitle or "").strip() or "-",
+                    it.question,
+                    it.answer,
+                    it.source,
+                ])
         return rows
 
     def _approved_rows_to_sheets_rows(self, approved_rows: list[list[str]]) -> list[list[str]]:
         rows: list[list[str]] = []
-        for topic, question, answer, source in approved_rows:
+        for topic, subtopic, question, answer, source in approved_rows:
             rows.append(
                 [
                     topic or "",
-                    "",
+                    subtopic or "",
                     question or "",
                     answer or "",
-                    "Aprovat",
+                    "Pendent",
                     "",
                     "",
                     "",

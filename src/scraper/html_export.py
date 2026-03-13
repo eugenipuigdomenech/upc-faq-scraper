@@ -22,6 +22,11 @@ def _get_row_value_case_insensitive(row: Dict[str, str], wanted_key: str) -> str
     return ""
 
 
+def _normalize_subtopic(value: str) -> str:
+    text = (value or "").strip()
+    return "" if text == "-" else text
+
+
 def filter_approved(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     approved_values = {
         "aprovat",
@@ -65,7 +70,7 @@ def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
         order: List[str] = []
         grouped: Dict[str, List[Dict[str, str]]] = {}
         for row in rows:
-            subtopic = _get_row_value_case_insensitive(row, "Subtopic").strip()
+            subtopic = _normalize_subtopic(_get_row_value_case_insensitive(row, "Subtopic"))
             topic = _get_row_value_case_insensitive(row, "Tema").strip()
             parent = subtopic or topic or "Preguntes frequents"
             if parent not in grouped:

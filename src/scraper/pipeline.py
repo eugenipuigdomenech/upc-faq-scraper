@@ -116,31 +116,23 @@ def _get_row_value_case_insensitive(row: Dict[str, str], wanted_key: str) -> str
     return ""
 
 
+def _normalize_subtopic_value(value: str) -> str:
+    text = (value or "").strip()
+    return "" if text == "-" else text
+
+
 def _validate_approved_subtopics(approved_rows: List[Dict[str, str]], row_numbers: Dict[int, int]) -> List[str]:
     placeholder_values = {
-        "",
-        "-",
         "--",
-        "n/a",
-        "na",
-        "none",
-        "null",
-        "sense",
-        "sense subtopic",
-        "tbd",
-        "?",
     }
     errors: List[str] = []
     for row in approved_rows:
         row_num = row_numbers.get(id(row), 0)
         label = f"Fila {row_num}" if row_num else "Fila desconeguda"
         topic = _get_row_value_case_insensitive(row, "Tema")
-        subtopic = _get_row_value_case_insensitive(row, "Subtopic")
+        subtopic = _normalize_subtopic_value(_get_row_value_case_insensitive(row, "Subtopic"))
         subtopic_plain = (subtopic or "").strip().lower()
 
-        if not subtopic:
-            errors.append(f"{label}: falta Subtopic (Tema='{topic}').")
-            continue
         if subtopic_plain in placeholder_values:
             errors.append(f"{label}: Subtopic invalid ('{subtopic}').")
             continue
@@ -209,7 +201,7 @@ def run_pipeline(
         subtopic_errors = 0
         for row in rows:
             subtopic = (row[1] if len(row) > 1 else "").strip()
-            if not subtopic:
+            if subtopic == "--":
                 subtopic_errors += 1
         if subtopic_errors:
             _log(f"Control subtopics: {subtopic_errors} FAQ(s) sense subtopic vÃ lid.")
@@ -250,7 +242,7 @@ def run_approved_to_html_pipeline(
             oauth_client_json=oauth_client_json,
             token_file=token_file,
             log=log,
-            create_if_missing=True,
+            create_if_missing=False,
         )
     else:
         raise RuntimeError("input_mode ha de ser 'csv' o 'sheets_oauth'.")
@@ -282,9 +274,9 @@ def run_approved_to_html_pipeline(
 
     topics = len(
         {
-            (_get_row_value_case_insensitive(r, "Subtopic") or _get_row_value_case_insensitive(r, "Tema")).strip()
+            (_normalize_subtopic_value(_get_row_value_case_insensitive(r, "Subtopic")) or _get_row_value_case_insensitive(r, "Tema")).strip()
             for r in approved
-            if (_get_row_value_case_insensitive(r, "Subtopic") or _get_row_value_case_insensitive(r, "Tema")).strip()
+            if (_normalize_subtopic_value(_get_row_value_case_insensitive(r, "Subtopic")) or _get_row_value_case_insensitive(r, "Tema")).strip()
         }
     )
     _log(f"Fitxer generat: {output_path}")
