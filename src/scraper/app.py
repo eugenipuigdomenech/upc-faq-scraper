@@ -247,6 +247,8 @@ class App(ctk.CTk):
         # Output sheets
         self.output_sheet_title = ctk.StringVar()
         self.output_sheet_tab = ctk.StringVar(value="FAQs")
+        self._selected_output_sheet_id = ""
+        self._selected_html_sheet_id = ""
         self.output_sheet_title.trace_add("write", lambda *_: self._schedule_save_ui_state())
         self.output_sheet_tab.trace_add("write", lambda *_: self._schedule_save_ui_state())
         self.recent_sheets_titles: list[str] = []
@@ -2044,6 +2046,17 @@ class App(ctk.CTk):
             sh = client.open_by_key(spreadsheet_id)
             worksheets = sh.worksheets() or []
             if worksheets:
+                def _norm_tab(value: str) -> str:
+                    txt = unicodedata.normalize("NFKD", (value or "").strip().lower())
+                    txt = "".join(ch for ch in txt if not unicodedata.combining(ch))
+                    txt = re.sub(r"[^a-z0-9]+", "", txt)
+                    return txt
+
+                preferred_names = {"faqs", "faq"}
+                for ws in worksheets:
+                    title = (ws.title or "").strip()
+                    if _norm_tab(title) in preferred_names:
+                        return title
                 return (worksheets[0].title or "").strip()
         except Exception:
             pass
@@ -2115,11 +2128,13 @@ class App(ctk.CTk):
 
             if target == "scrape":
                 self.sheet_target_mode.set("Examinar")
+                self._selected_output_sheet_id = picked_id
                 self.output_sheet_title.set(title)
                 if tab_name:
                     self.output_sheet_tab.set(tab_name)
             else:
                 self.html_sheet_target_mode.set("Examinar")
+                self._selected_html_sheet_id = picked_id
                 self.html_sheet_title.set(title)
                 if tab_name:
                     self.html_sheet_tab.set(tab_name)
@@ -2141,10 +2156,12 @@ class App(ctk.CTk):
 
     def new_google_sheets_scrape_clicked(self):
         self.sheet_target_mode.set("Nou")
+        self._selected_output_sheet_id = ""
         self._apply_selected_recent_sheet()
 
     def new_google_sheets_html_clicked(self):
         self.html_sheet_target_mode.set("Nou")
+        self._selected_html_sheet_id = ""
         self._apply_selected_recent_sheet_html()
 
     def _sanitize_persisted_text(self, value: str) -> str:
@@ -2205,6 +2222,7 @@ class App(ctk.CTk):
                 "output_file_path": self._sanitize_persisted_text(self.output_file_path.get()),
                 "output_sheet_title": self._sanitize_persisted_text(self.output_sheet_title.get()),
                 "output_sheet_tab": self._sanitize_persisted_text(self.output_sheet_tab.get()),
+                "output_sheet_id": self._sanitize_persisted_text(getattr(self, "_selected_output_sheet_id", "")),
                 "oauth_client_json": (self.oauth_client_json.get() or "").strip(),
                 "token_file": (self.token_file.get() or "").strip(),
             },
@@ -2213,6 +2231,7 @@ class App(ctk.CTk):
                 "html_input_csv_path": self._sanitize_persisted_text(self.html_input_csv_path.get()),
                 "html_sheet_title": self._sanitize_persisted_text(self.html_sheet_title.get()),
                 "html_sheet_tab": self._sanitize_persisted_text(self.html_sheet_tab.get()),
+                "html_sheet_id": self._sanitize_persisted_text(getattr(self, "_selected_html_sheet_id", "")),
             },
         }
 
@@ -2281,6 +2300,7 @@ class App(ctk.CTk):
                 self.output_sheet_tab.set(
                     self._sanitize_persisted_text(scrape_config.get("output_sheet_tab")) or "FAQs"
                 )
+                self._selected_output_sheet_id = self._sanitize_persisted_text(scrape_config.get("output_sheet_id"))
                 oauth_saved = (scrape_config.get("oauth_client_json") or "").strip()
                 token_saved = (scrape_config.get("token_file") or "").strip()
                 if oauth_saved and os.path.exists(oauth_saved):
@@ -2299,6 +2319,7 @@ class App(ctk.CTk):
                 self.html_sheet_tab.set(
                     self._sanitize_persisted_text(export_config.get("html_sheet_tab")) or "FAQs"
                 )
+                self._selected_html_sheet_id = self._sanitize_persisted_text(export_config.get("html_sheet_id"))
 
             if isinstance(recent_google_sheets, list):
                 cleaned = []
@@ -2914,6 +2935,29 @@ class App(ctk.CTk):
         self.log2.see("1.0")
         self._schedule_save_ui_state()
 
+    def _prepend_html_diagnostics_comment(self, html_text: str, diagnostics: dict | None) -> str:
+        if not diagnostics:
+            return html_text or ""
+
+        headers = diagnostics.get("headers") or []
+        subtopics = diagnostics.get("subtopics_preview") or []
+        topics = diagnostics.get("topics_preview") or []
+        empty_subtopics = diagnostics.get("empty_subtopics", 0)
+
+        lines = ["DIAGNOSTIC HTML"]
+        if headers:
+            lines.append("Headers: " + ", ".join(str(h) for h in headers))
+        if subtopics:
+            lines.append("Subtopics detectats: " + ", ".join(str(s) for s in subtopics))
+        else:
+            lines.append("Subtopics detectats: cap")
+        lines.append(f"Files aprovades amb Subtopic buit: {empty_subtopics}")
+        if topics:
+            lines.append("Temes detectats: " + ", ".join(str(t) for t in topics))
+
+        comment = "<!--\n" + "\n".join(lines) + "\n-->\n"
+        return comment + (html_text or "")
+
     def _format_code_for_preview(self, code: str) -> str:
         text = (code or "").strip()
         if not text:
@@ -3354,7 +3398,7 @@ class App(ctk.CTk):
         try:
             mode = self.html_input_mode.get()
 
-            if mode == "sheets_oauth":
+            if mode == "sheets_oauth" and self.html_sheet_target_mode.get() == "Nou":
                 approved_rows = self._get_approved_rows()
                 if approved_rows:
                     sheet_rows = self._approved_rows_to_sheets_rows(approved_rows)
@@ -3365,6 +3409,7 @@ class App(ctk.CTk):
                         rows=sheet_rows,
                         spreadsheet_title=self.html_sheet_title.get().strip(),
                         worksheet_name=self.html_sheet_tab.get().strip(),
+                        spreadsheet_id=(self._selected_html_sheet_id or "").strip() or None,
                         oauth_client_json=self._oauth_client_path(),
                         token_file=self._token_file_path(),
                         log=self.ui_log2,
@@ -3381,12 +3426,18 @@ class App(ctk.CTk):
                     )
                     return
 
+            if mode == "sheets_oauth" and self.html_sheet_target_mode.get() == "Examinar":
+                self.ui_log2(
+                    f"Llegint FAQs directament de Google Sheets: {self.html_sheet_title.get().strip()} / {self.html_sheet_tab.get().strip()}"
+                )
+
             # --- MODE CSV / SHEETS (com abans) ---
             core.run_approved_to_html_pipeline(
                 input_mode=mode,
                 input_csv_path=self.html_input_csv_path.get().strip() if mode == "csv" else None,
                 sheet_title=self.html_sheet_title.get().strip() if mode == "sheets_oauth" else None,
                 sheet_tab=self.html_sheet_tab.get().strip() if mode == "sheets_oauth" else None,
+                sheet_id=(self._selected_html_sheet_id or "").strip() if mode == "sheets_oauth" else None,
                 oauth_client_json=self._oauth_client_path(),
                 token_file=self._token_file_path(),
                 log=self.ui_log2,
@@ -3420,11 +3471,14 @@ class App(ctk.CTk):
                 input_csv_path=self.html_input_csv_path.get().strip() if mode == "csv" else None,
                 sheet_title=self.html_sheet_title.get().strip() if mode == "sheets_oauth" else None,
                 sheet_tab=self.html_sheet_tab.get().strip() if mode == "sheets_oauth" else None,
+                sheet_id=(self._selected_html_sheet_id or "").strip() if mode == "sheets_oauth" else None,
                 oauth_client_json=self._oauth_client_path(),
                 token_file=self._token_file_path(),
                 log=self.ui_log2,
             )
             html_text = result.get("html_text", "") if isinstance(result, dict) else ""
+            diagnostics = result.get("diagnostics") if isinstance(result, dict) else None
+            html_text = self._prepend_html_diagnostics_comment(html_text, diagnostics)
             self.after(0, lambda: self._show_generated_code(html_text))
             if mode == "sheets_oauth":
                 self.after(

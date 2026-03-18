@@ -16,15 +16,28 @@ def _normalize_text(value: str) -> str:
 
 def _get_row_value_case_insensitive(row: Dict[str, str], wanted_key: str) -> str:
     wanted = _normalize_text(wanted_key)
+    aliases = {wanted}
+    if wanted == _normalize_text("Subtopic"):
+        aliases.update(
+            {
+                _normalize_text("Sub topic"),
+                _normalize_text("Subtema"),
+                _normalize_text("Sub tema"),
+                _normalize_text("Subtòpic"),
+                _normalize_text("Sub tòpic"),
+            }
+        )
     for k, v in row.items():
-        if _normalize_text(k) == wanted:
+        if _normalize_text(k) in aliases:
             return v or ""
     return ""
 
 
 def _normalize_subtopic(value: str) -> str:
     text = (value or "").strip()
-    return "" if text == "-" else text
+    if text in {"-", "--", "–", "—"}:
+        return ""
+    return text
 
 
 def filter_approved(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
@@ -85,36 +98,7 @@ def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
         base = re.sub(r"-{2,}", "-", base).strip("-")
         return base or "topic"
 
-    out: List[str] = []
-    out.append('<div id="faqTopicAccordion" style="margin-bottom: 40px;">')
-
-    topic_blocks = _grouped_by_topic(items)
-    for topic_idx, (topic, topic_items) in enumerate(topic_blocks, start=1):
-        topic_id = f"topic-{topic_idx}-{_slug(topic)}"
-        inner_acc_id = f"faqAccordion-{topic_idx}"
-
-        out.append(f"<!-- TOPIC {topic_idx}: {html.escape(topic)} -->")
-        out.append('<div style="border: 0; box-shadow: none; border-bottom: 1px solid #D1D1D1; background: transparent;">')
-        out.append(
-            '<h2 style="padding: 0; margin: 0;">'
-            f'<button type="button" data-bs-toggle="collapse" data-bs-target="#{topic_id}" aria-expanded="false" aria-controls="{topic_id}" '
-            'style="width: 100%; text-align: left; font-size: 24px; background: #F2F8FB; padding: 24px 40px 24px 18px; '
-            'font-weight: 800; color: #003E53; letter-spacing: .2px; position: relative; border: 0; border-top: 1px solid #D1D1D1; '
-            'border-left: 5px solid #00769D; '
-            'box-shadow: none; cursor: pointer;">'
-            f"{html.escape(topic)} "
-            '<span aria-hidden="true" style="position: absolute; right: 18px; top: 50%; transform: translateY(-50%); '
-            'font-size: 24px; line-height: 1; color: #003E53; transition: all .25s ease;">&#8964;</span> '
-            "</button></h2>"
-        )
-        out.append(
-            f'<div id="{topic_id}" class="collapse" data-bs-parent="#faqTopicAccordion" '
-            'style="border-bottom: 1px solid #D1D1D1; margin-bottom: -1px; position: relative; z-index: 1; height: 0px; overflow: hidden; '
-            'transition: height 350ms ease;">'
-        )
-        out.append('<div style="border-top: 0; padding: 0 0 12px;">')
-        out.append(f'<div id="{inner_acc_id}" data-upc-faq-accordion="1">')
-
+    def _append_question_items(out_lines: List[str], topic_idx: int, topic_items: List[Dict[str, str]], parent_id: str):
         for item_idx, it in enumerate(topic_items, start=1):
             q = (it.get("Pregunta") or "").strip()
             a = (it.get("Resposta") or "").strip()
@@ -122,59 +106,126 @@ def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
             a_html = _answer_to_html_paragraph(a)
             qid = f"c{topic_idx}-{item_idx}"
 
-            out.append(f"<!-- ITEM {topic_idx}.{item_idx} -->")
-            out.append('<div style="border: 0; box-shadow: none; border-bottom: 1px solid #D1D1D1; background: transparent;">')
-            out.append(
+            out_lines.append(f"<!-- ITEM {topic_idx}.{item_idx} -->")
+            out_lines.append('<div class="accordion-item" style="border: 0; box-shadow: none; border-bottom: 1px solid #D1D1D1; background: transparent; border-radius: 0;">')
+            out_lines.append(
                 '<h2 style="padding: 0; margin: 0;">'
-                f'<button type="button" data-bs-toggle="collapse" data-bs-target="#{qid}" aria-expanded="false" aria-controls="{qid}" '
+                f'<button type="button" class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#{qid}" aria-expanded="false" aria-controls="{qid}" data-upc-faq-toggle="1" '
                 'style="width: 100%; text-align: left; font-size: 18px; background: transparent; padding: 30px 36px 30px 18px; '
                 'font-weight: 500; color: #00769d; position: relative; border: 0; border-top: 1px solid #D1D1D1; '
                 'box-shadow: none; cursor: pointer;">'
-                f"{q_html} "
-                '<span aria-hidden="true" style="position: absolute; right: 18px; top: 50%; transform: translateY(-50%); '
-                'font-size: 22px; line-height: 1; color: #00769D; transition: all .25s ease;">&#8964;</span> '
+                f"{q_html}"
                 "</button></h2>"
             )
-            out.append(
-                f'<div id="{qid}" class="collapse" data-bs-parent="#{inner_acc_id}" '
-                'style="border-bottom: 1px solid #D1D1D1; margin-bottom: -1px; position: relative; z-index: 1; height: 0px; overflow: hidden; '
-                'transition: height 350ms ease;">'
+            out_lines.append(
+                f'<div id="{qid}" class="collapse" data-bs-parent="#{parent_id}" '
+                'style="border-bottom: 1px solid #D1D1D1; margin-bottom: -1px; position: relative; z-index: 1; height: 0px; overflow: hidden; transition: height 350ms ease;">'
             )
-            out.append('<div style="border-top: 0; padding: 0 18px 18px;">')
-            out.append(
+            out_lines.append('<div style="border-top: 0; padding: 0 18px 18px; background: transparent;">')
+            out_lines.append(
                 '<div style="margin: 0; font-size: 16px; font-weight: 300; line-height: 1.45; color: #636363;">'
                 f"{a_html}</div>"
             )
-            out.append("</div></div></div>")
+            out_lines.append("</div></div></div>")
+
+    topic_blocks = _grouped_by_topic(items)
+    has_real_subtopic = any(
+        _normalize_subtopic(_get_row_value_case_insensitive(row, "Subtopic"))
+        for row in items
+    )
+
+    out: List[str] = []
+
+    if not has_real_subtopic and len(topic_blocks) == 1:
+        out.append('<div id="faqTopicAccordion" class="accordion" style="margin-bottom: 40px;">')
+        out.append('<div class="accordion-body" style="border-top: 0; padding: 0 0 12px; background: transparent;">')
+        out.append('<div id="faqAccordion-1" class="accordion" data-upc-faq-accordion="1">')
+        _append_question_items(out, 1, topic_blocks[0][1], "faqAccordion-1")
+        out.append("</div>")
+        out.append("</div>")
+        out.append("</div>")
+    else:
+        out.append('<div id="faqTopicAccordion" class="accordion" style="margin-bottom: 40px;">')
+
+        for topic_idx, (topic, topic_items) in enumerate(topic_blocks, start=1):
+            topic_id = f"topic-{topic_idx}-{_slug(topic)}"
+            inner_acc_id = f"faqAccordion-{topic_idx}"
+
+            out.append(f"<!-- TOPIC {topic_idx}: {html.escape(topic)} -->")
+            out.append('<div class="accordion-item" style="border: 0; box-shadow: none; border-bottom: 1px solid #D1D1D1; background: transparent; border-radius: 0;">')
+            out.append(
+                '<h2 style="padding: 0; margin: 0;">'
+                f'<button type="button" class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#{topic_id}" aria-expanded="false" aria-controls="{topic_id}" data-upc-faq-toggle="1" '
+                'style="width: 100%; text-align: left; font-size: 24px; background: transparent; padding: 30px 36px 30px 18px; '
+                'font-weight: 600; color: #00769D; letter-spacing: .2px; position: relative; border: 0; border-top: 1px solid #D1D1D1; '
+                'box-shadow: none; cursor: pointer;">'
+                f"{html.escape(topic)}"
+                "</button></h2>"
+            )
+            out.append(
+                f'<div id="{topic_id}" class="collapse" data-bs-parent="#faqTopicAccordion" '
+                'style="border-bottom: 1px solid #D1D1D1; margin-bottom: -1px; position: relative; z-index: 1; height: 0px; overflow: hidden; transition: height 350ms ease;">'
+            )
+            out.append('<div style="border-top: 0; padding: 0 0 12px; background: transparent;">')
+            out.append(f'<div id="{inner_acc_id}" class="accordion" data-upc-faq-accordion="1">')
+            _append_question_items(out, topic_idx, topic_items, inner_acc_id)
+            out.append("</div>")
+            out.append("</div></div>")
 
         out.append("</div>")
-        out.append("</div></div>")
-
-    out.append("</div>")
     out.append("<p>")
+    out.append("<style>")
+    out.append(
+        """[data-upc-faq-toggle="1"]:focus { box-shadow: none !important; }
+[data-upc-faq-toggle="1"]::after {
+  content: "";
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-right: 3px solid #00769d;
+  border-bottom: 3px solid #00769d;
+  background-image: none !important;
+  transform-origin: center;
+  transition: transform .25s ease !important;
+  transform: translateY(-65%) rotate(45deg) !important;
+}
+[data-upc-faq-toggle="1"][aria-expanded="true"]::after {
+  transform: translateY(-65%) rotate(225deg) !important;
+}
+[data-upc-faq-toggle="1"][aria-expanded="false"]::after {
+  transform: translateY(-65%) rotate(45deg) !important;
+}"""
+    )
+    out.append("</style>")
     out.append("<script>")
     out.append(
-        r"""(function () {
-  const accordions = Array.from(document.querySelectorAll('[data-upc-faq-accordion="1"]'));
-  if (!accordions.length) return;
+        """(function () {
+  if (window.__upcFaqStandaloneInit) return;
+  window.__upcFaqStandaloneInit = true;
 
-  accordions.forEach((acc) => {
-    const collapses = Array.from(acc.querySelectorAll('.collapse'));
+  function initAccordion(acc) {
+    if (!acc || acc.dataset.upcFaqInit === '1') return;
+    acc.dataset.upcFaqInit = '1';
+
+    var collapses = Array.from(acc.querySelectorAll(':scope > .collapse, :scope > .accordion-item > .collapse'));
+    if (!collapses.length) {
+      collapses = Array.from(acc.querySelectorAll('.collapse')).filter(function (col) {
+        return col.getAttribute('data-bs-parent') === '#' + acc.id;
+      });
+    }
 
     function btnFor(col) {
       return acc.querySelector('[data-bs-target="#' + col.id + '"]');
     }
 
     function setStyles(col, isOpen) {
-      const btn = btnFor(col);
-      if (btn) {
+      var btn = btnFor(col);
+        if (btn) {
         btn.style.borderTopColor = isOpen ? '#00769D' : '#D1D1D1';
         btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-        const icon = btn.querySelector('span[aria-hidden="true"]');
-        if (icon) {
-          icon.textContent = isOpen ? '\u2303' : '\u2304';
-          icon.style.transform = 'translateY(-50%)';
-        }
+        btn.classList.toggle('collapsed', !isOpen);
       }
       col.style.borderBottomColor = isOpen ? '#00769D' : '#D1D1D1';
     }
@@ -182,19 +233,20 @@ def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
     function open(col) {
       if (col.dataset.anim === '1') return;
 
-      collapses.forEach(other => { if (other !== col) close(other); });
+      collapses.forEach(function (other) {
+        if (other !== col) close(other);
+      });
 
       col.dataset.anim = '1';
       col.classList.add('showing');
       col.style.height = '0px';
 
-      requestAnimationFrame(() => {
-        const h = col.scrollHeight;
-        col.style.height = h + 'px';
+      requestAnimationFrame(function () {
+        col.style.height = col.scrollHeight + 'px';
         setStyles(col, true);
       });
 
-      const done = (e) => {
+      var done = function (e) {
         if (e.propertyName !== 'height') return;
         col.classList.remove('showing');
         col.classList.add('show');
@@ -212,15 +264,14 @@ def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
       col.dataset.anim = '1';
       col.classList.remove('show');
 
-      const h = col.scrollHeight;
-      col.style.height = h + 'px';
+      col.style.height = col.scrollHeight + 'px';
 
-      requestAnimationFrame(() => {
+      requestAnimationFrame(function () {
         col.style.height = '0px';
         setStyles(col, false);
       });
 
-      const done = (e) => {
+      var done = function (e) {
         if (e.propertyName !== 'height') return;
         col.dataset.anim = '0';
         col.removeEventListener('transitionend', done);
@@ -228,27 +279,29 @@ def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
       col.addEventListener('transitionend', done);
     }
 
-    acc.querySelectorAll('button[data-bs-target]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+    acc.querySelectorAll('button[data-bs-target]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
         e.preventDefault();
-        const sel = btn.getAttribute('data-bs-target');
-        const col = sel ? document.querySelector(sel) : null;
+        var sel = btn.getAttribute('data-bs-target');
+        var col = sel ? document.querySelector(sel) : null;
         if (!col) return;
 
-        const isOpen = col.classList.contains('show') || col.style.height === 'auto';
+        var isOpen = col.classList.contains('show') || col.style.height === 'auto';
         if (isOpen) close(col);
         else open(col);
       });
     });
 
-    collapses.forEach(col => {
+    collapses.forEach(function (col) {
       col.style.overflow = 'hidden';
       col.style.transition = 'height 350ms ease';
       col.style.height = '0px';
       col.classList.remove('show');
       setStyles(col, false);
     });
-  });
+  }
+
+  document.querySelectorAll('#faqTopicAccordion, [id^="faqAccordion-"]').forEach(initAccordion);
 })();"""
     )
     out.append("</script>")
@@ -281,10 +334,15 @@ def approved_rows_to_html(approved_rows, log=None):
 
     items = []
     for row in approved_rows:
-        topic, question, answer, source = row
+        topic = row[0] if len(row) > 0 else ""
+        subtopic = row[1] if len(row) > 1 else ""
+        question = row[2] if len(row) > 2 else ""
+        answer = row[3] if len(row) > 3 else ""
+        source = row[4] if len(row) > 4 else ""
         items.append(
             {
                 "Tema": topic,
+                "Subtopic": subtopic,
                 "Pregunta": question,
                 "Resposta": answer,
                 "Font": source,

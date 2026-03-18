@@ -87,10 +87,18 @@ def _format_google_error(e: Exception) -> str:
     return str(e)
 
 
-def _open_sheet_lenient(client, spreadsheet_title: str, log=None):
+def _open_sheet_lenient(client, spreadsheet_title: str, log=None, spreadsheet_id: str | None = None):
     def _log(m: str):
         if log:
             log(m)
+
+    sheet_id = (spreadsheet_id or "").strip()
+    if sheet_id:
+        _log(f"Intentant obrir Google Sheet per ID: {sheet_id}")
+        try:
+            return client.open_by_key(sheet_id)
+        except Exception:
+            pass
 
     title = (spreadsheet_title or "").strip()
     if not title:
@@ -160,6 +168,7 @@ def export_rows_to_google_sheets_oauth(
     rows: List[List[str]],
     spreadsheet_title: str,
     worksheet_name: str,
+    spreadsheet_id: str | None = None,
     oauth_client_json: str = "oauth_client.json",
     token_file: str = "token.json",
     log=None,
@@ -688,7 +697,7 @@ def export_rows_to_google_sheets_oauth(
     client = get_oauth_client(oauth_client_json=oauth_client_json, token_file=token_file)
 
     try:
-        sh = _open_sheet_lenient(client, spreadsheet_title, log=log)
+        sh = _open_sheet_lenient(client, spreadsheet_title, log=log, spreadsheet_id=spreadsheet_id)
         _log(f"Spreadsheet obert: {sh.title}")
     except Exception as e:
         raise RuntimeError(
@@ -740,6 +749,7 @@ def export_rows_to_google_sheets_oauth(
 def read_rows_from_sheets_oauth(
     spreadsheet_title: str,
     worksheet_name: str,
+    spreadsheet_id: str | None = None,
     oauth_client_json: str = "oauth_client.json",
     token_file: str = "token.json",
     log=None,
@@ -757,7 +767,7 @@ def read_rows_from_sheets_oauth(
 
     _log(f"Google Sheets: obrint sheet '{spreadsheet_title}'…")
     try:
-        sh = _open_sheet_lenient(client, spreadsheet_title, log=log)
+        sh = _open_sheet_lenient(client, spreadsheet_title, log=log, spreadsheet_id=spreadsheet_id)
     except Exception as e:
         if create_if_missing:
             _log(f"Google Sheets: el sheet '{spreadsheet_title}' no existeix, es crearà…")

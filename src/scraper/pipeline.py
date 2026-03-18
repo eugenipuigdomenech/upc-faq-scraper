@@ -1,7 +1,9 @@
 ﻿import csv
 import json
+import os
 import re
 import unicodedata
+from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
@@ -110,35 +112,196 @@ def _normalize_for_compare(value: str) -> str:
 
 def _get_row_value_case_insensitive(row: Dict[str, str], wanted_key: str) -> str:
     wanted = _normalize_for_compare(wanted_key)
+    aliases = {wanted}
+    if wanted == _normalize_for_compare("Subtopic"):
+        aliases.update(
+            {
+                _normalize_for_compare("Sub topic"),
+                _normalize_for_compare("Subtema"),
+                _normalize_for_compare("Sub tema"),
+                _normalize_for_compare("Subtòpic"),
+                _normalize_for_compare("Sub tòpic"),
+            }
+        )
     for k, v in row.items():
-        if _normalize_for_compare(k) == wanted:
+        if _normalize_for_compare(k) in aliases:
             return (v or "").strip()
     return ""
 
 
 def _normalize_subtopic_value(value: str) -> str:
     text = (value or "").strip()
-    return "" if text == "-" else text
+    if text in {"-", "--", "–", "—"}:
+        return ""
+    return text
+
+
+def _log_grouping_diagnostics(rows: List[Dict[str, str]], approved_rows: List[Dict[str, str]], log=None):
+    def _log(m: str):
+        if log:
+            log(m)
+
+    if not rows:
+        _log("Diagnòstic HTML: no s'han llegit files.")
+        return
+
+    header_keys = [k for k in rows[0].keys() if (k or "").strip()]
+    _log("Diagnòstic HTML: columnes detectades -> " + ", ".join(header_keys))
+
+    if not approved_rows:
+        _log("Diagnòstic HTML: no hi ha files aprovades.")
+        return
+
+    subtopics = [
+        _normalize_subtopic_value(_get_row_value_case_insensitive(r, "Subtopic"))
+        for r in approved_rows
+    ]
+    topics = [
+        _get_row_value_case_insensitive(r, "Tema").strip()
+        for r in approved_rows
+    ]
+
+    non_empty_subtopics = [s for s in subtopics if s]
+    empty_subtopics = len(subtopics) - len(non_empty_subtopics)
+    subtopic_counter = Counter(non_empty_subtopics)
+    topic_counter = Counter([t for t in topics if t])
+
+    if subtopic_counter:
+        preview = ", ".join(f"{name} ({count})" for name, count in subtopic_counter.most_common(10))
+        _log(f"Diagnòstic HTML: subtopics aprovats detectats -> {preview}")
+    else:
+        _log("Diagnòstic HTML: no s'ha detectat cap subtopic informat a les files aprovades.")
+
+    if empty_subtopics:
+        _log(f"Diagnòstic HTML: files aprovades amb Subtopic buit -> {empty_subtopics}")
+
+    if topic_counter:
+        preview = ", ".join(f"{name} ({count})" for name, count in topic_counter.most_common(10))
+        _log(f"Diagnòstic HTML: temes aprovats detectats -> {preview}")
+
+
+def _build_grouping_diagnostics(rows: List[Dict[str, str]], approved_rows: List[Dict[str, str]]) -> Dict[str, object]:
+    header_keys = [k for k in (rows[0].keys() if rows else []) if (k or "").strip()]
+    subtopics = [
+        _normalize_subtopic_value(_get_row_value_case_insensitive(r, "Subtopic"))
+        for r in approved_rows
+    ]
+    topics = [
+        _get_row_value_case_insensitive(r, "Tema").strip()
+        for r in approved_rows
+    ]
+    non_empty_subtopics = [s for s in subtopics if s]
+    empty_subtopics = len(subtopics) - len(non_empty_subtopics)
+    subtopic_counter = Counter(non_empty_subtopics)
+    topic_counter = Counter([t for t in topics if t])
+    return {
+        "headers": header_keys,
+        "subtopics_preview": [name for name, _count in subtopic_counter.most_common(10)],
+        "topics_preview": [name for name, _count in topic_counter.most_common(10)],
+        "empty_subtopics": empty_subtopics,
+    }
 
 
 def _validate_approved_subtopics(approved_rows: List[Dict[str, str]], row_numbers: Dict[int, int]) -> List[str]:
-    placeholder_values = {
-        "--",
-    }
     errors: List[str] = []
     for row in approved_rows:
         row_num = row_numbers.get(id(row), 0)
         label = f"Fila {row_num}" if row_num else "Fila desconeguda"
         topic = _get_row_value_case_insensitive(row, "Tema")
         subtopic = _normalize_subtopic_value(_get_row_value_case_insensitive(row, "Subtopic"))
-        subtopic_plain = (subtopic or "").strip().lower()
-
-        if subtopic_plain in placeholder_values:
-            errors.append(f"{label}: Subtopic invalid ('{subtopic}').")
-            continue
         if topic and _normalize_for_compare(subtopic) == _normalize_for_compare(topic):
             errors.append(f"{label}: Subtopic no pot ser igual a Tema ('{topic}').")
     return errors
+
+
+def _filter_approved_rows_for_render(approved_rows: List[Dict[str, str]], log=None) -> List[Dict[str, str]]:
+    def _log(m: str):
+        if log:
+            log(m)
+
+    has_any_subtopic = any(
+        _normalize_subtopic_value(_get_row_value_case_insensitive(r, "Subtopic"))
+        for r in approved_rows
+    )
+    if not has_any_subtopic:
+        return approved_rows
+
+    filtered = [
+        r
+        for r in approved_rows
+        if _normalize_subtopic_value(_get_row_value_case_insensitive(r, "Subtopic"))
+    ]
+    ignored = len(approved_rows) - len(filtered)
+    if ignored:
+        _log(
+            "Control subtopics: s'ignoren "
+            f"{ignored} fila(es) aprovades amb Subtopic buit per evitar barrejar FAQs antigues."
+        )
+    return filtered
+
+
+def _filter_approved_rows_by_context_topic(
+    approved_rows: List[Dict[str, str]],
+    context_labels: List[str] | None = None,
+    log=None,
+) -> List[Dict[str, str]]:
+    def _log(m: str):
+        if log:
+            log(m)
+
+    rows = approved_rows or []
+    if not rows:
+        return rows
+
+    has_any_subtopic = any(
+        _normalize_subtopic_value(_get_row_value_case_insensitive(r, "Subtopic"))
+        for r in rows
+    )
+    if has_any_subtopic:
+        return rows
+
+    topics: List[str] = []
+    for row in rows:
+        topic = (_get_row_value_case_insensitive(row, "Tema") or "").strip()
+        if topic and topic not in topics:
+            topics.append(topic)
+
+    if len(topics) <= 1:
+        return rows
+
+    normalized_contexts = []
+    for label in context_labels or []:
+        norm = _normalize_for_compare(label)
+        if norm:
+            normalized_contexts.append(norm)
+
+    if not normalized_contexts:
+        return rows
+
+    matching_topics = []
+    for topic in topics:
+        norm_topic = _normalize_for_compare(topic)
+        if len(norm_topic) < 4:
+            continue
+        if any(norm_topic in ctx for ctx in normalized_contexts):
+            matching_topics.append(topic)
+
+    if len(matching_topics) != 1:
+        return rows
+
+    chosen_topic = matching_topics[0]
+    filtered = [
+        row
+        for row in rows
+        if (_get_row_value_case_insensitive(row, "Tema") or "").strip() == chosen_topic
+    ]
+    if filtered and len(filtered) != len(rows):
+        _log(
+            "Control temes: s'exporten només les FAQs del tema "
+            f"'{chosen_topic}' perquè coincideix amb el context seleccionat."
+        )
+        return filtered
+    return rows
 
 
 def run_pipeline(
@@ -220,6 +383,7 @@ def run_approved_to_html_pipeline(
     input_csv_path: Optional[str] = None,
     sheet_title: Optional[str] = None,
     sheet_tab: Optional[str] = None,
+    sheet_id: Optional[str] = None,
     oauth_client_json: str = "oauth_client.json",
     token_file: str = "token.json",
     output_path: str = "faqs_aprovades.txt",
@@ -233,17 +397,20 @@ def run_approved_to_html_pipeline(
         if not input_csv_path:
             raise RuntimeError("Falta el CSV d'entrada.")
         rows = read_rows_from_csv_like_sheets(input_csv_path)
+        context_labels = [os.path.basename(input_csv_path or ""), input_csv_path or ""]
     elif input_mode == "sheets_oauth":
         if not (sheet_title and sheet_tab):
             raise RuntimeError("Falta tÃ­tol o pestanya del Google Sheet.")
         rows = read_rows_from_sheets_oauth(
             spreadsheet_title=sheet_title,
             worksheet_name=sheet_tab,
+            spreadsheet_id=sheet_id,
             oauth_client_json=oauth_client_json,
             token_file=token_file,
             log=log,
             create_if_missing=False,
         )
+        context_labels = [sheet_title or "", sheet_tab or ""]
     else:
         raise RuntimeError("input_mode ha de ser 'csv' o 'sheets_oauth'.")
 
@@ -251,6 +418,7 @@ def run_approved_to_html_pipeline(
     row_numbers = {id(row): idx for idx, row in enumerate(rows, start=2)}
     approved = filter_approved(rows)
     _log(f"Files aprovades: {len(approved)}")
+    _log_grouping_diagnostics(rows, approved, log=log)
 
     subtopic_errors = _validate_approved_subtopics(approved, row_numbers)
     if subtopic_errors:
@@ -264,9 +432,15 @@ def run_approved_to_html_pipeline(
             f"{preview}{more}"
         )
 
+    approved = _filter_approved_rows_for_render(approved, log=log)
+    approved = _filter_approved_rows_by_context_topic(approved, context_labels=context_labels, log=log)
+
     approved.sort(
         key=lambda r: (
-            (_get_row_value_case_insensitive(r, "Subtopic") or _get_row_value_case_insensitive(r, "Tema")).lower(),
+            (
+                _normalize_subtopic_value(_get_row_value_case_insensitive(r, "Subtopic"))
+                or _get_row_value_case_insensitive(r, "Tema")
+            ).lower(),
             _get_row_value_case_insensitive(r, "Pregunta").lower(),
         )
     )
@@ -286,4 +460,5 @@ def run_approved_to_html_pipeline(
         "approved_rows": len(approved),
         "topics": topics,
         "html_text": html_text,
+        "diagnostics": _build_grouping_diagnostics(rows, approved),
     }
