@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 import customtkinter as ctk
 from tkinter import messagebox, font as tkfont
-from PIL import Image
+from PIL import Image, ImageDraw
 import hashlib
 from bs4 import BeautifulSoup, NavigableString
 
@@ -278,8 +278,10 @@ class App(ctk.CTk):
         self._google_auth_in_progress = False
         self._google_profile_image = None
         self._google_profile_image_token = ""
+        self._google_profile_name = ""
         self._google_profile_email = ""
-        self.google_session_text = ctk.StringVar(value="")
+        self.google_session_name = ctk.StringVar(value="")
+        self.google_session_email = ctk.StringVar(value="")
         self._is_home_visible = True
         self.oauth_client_json.trace_add("write", lambda *_: self._schedule_save_ui_state())
         self.token_file.trace_add("write", lambda *_: self._schedule_save_ui_state())
@@ -302,6 +304,24 @@ class App(ctk.CTk):
             # Fallback discret per si falta l'asset.
             img = Image.new("RGBA", size, (0, 0, 0, 0))
             return ctk.CTkImage(light_image=img, size=size)
+
+    def _create_avatar_ctk_image(self, pil_img: Image.Image | None, size: int = 104):
+        size = max(24, int(size))
+        try:
+            if pil_img is None:
+                pil_img = Image.open(resource_path("assets/Google_logo.png")).convert("RGBA")
+            else:
+                pil_img = pil_img.convert("RGBA")
+            pil_img = pil_img.resize((size, size), Image.LANCZOS)
+            mask = Image.new("L", (size, size), 0)
+            draw = ImageDraw.Draw(mask)
+            draw.ellipse((0, 0, size - 1, size - 1), fill=255)
+            avatar = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            avatar.paste(pil_img, (0, 0), mask)
+            return ctk.CTkImage(light_image=avatar, size=(size, size))
+        except Exception:
+            fallback = Image.new("RGBA", (size, size), (217, 227, 232, 255))
+            return ctk.CTkImage(light_image=fallback, size=(size, size))
 
     def _create_upc_logo_image(self, target_h: int):
         target_h = max(1, int(target_h))
@@ -602,11 +622,9 @@ class App(ctk.CTk):
         ctk.CTkLabel(
             home_footer,
             text=(
-                "Crèdits: UPC ESEIAAT · Projecte WP3\n"
-                "Eina desenvolupada i mantinguda per l'equip de suport digital per facilitar "
-                "la gestió, l'exportació i la publicació de FAQs a Genweb.\n"
-                "Projecte orientat a millorar la qualitat, la traçabilitat i l'eficiència "
-                "de la documentació web institucional."
+                "Credits: UPC ESEIAAT\n"
+                "Eina desenvolupada en el marc del projecte Genweb de la Universitat "
+                "Politecnica de Catalunya (UPC) per a la gestio i publicacio de continguts FAQ."
             ),
             text_color="#365C6B",
             font=ctk.CTkFont(size=11),
@@ -743,78 +761,79 @@ class App(ctk.CTk):
             pady=(self._card_inner_pady, 12),
         )
 
-        out_mode_radios = ctk.CTkFrame(out_mode_frame, fg_color="transparent")
-        out_mode_radios.pack(anchor="w")
-
-        self.mode_radio_sheets_1 = ctk.CTkRadioButton(
-            out_mode_radios, text="Google Sheets",
-            variable=self.output_mode, value="sheets_oauth",
-            command=self._refresh_ui,
-            font=self._body_font,
-        )
-        self.mode_radio_sheets_1.pack(side="left", padx=(0, 18))
+        ctk.CTkLabel(
+            out_mode_frame,
+            text="Google Sheets",
+            font=self._field_label_font,
+            text_color="#1C2B34",
+        ).pack(anchor="w")
 
         self.google_logo_image = self._create_google_logo_image()
-        self.google_session_row_1 = ctk.CTkFrame(out_mode_frame, fg_color="transparent")
-        self.google_session_row_1.pack(anchor="w", pady=(6, 0))
-        self.google_session_avatar_1 = ctk.CTkLabel(
-            self.google_session_row_1, text="", image=self.google_logo_image
-        )
-        self.google_session_label_1 = ctk.CTkLabel(
-            self.google_session_row_1,
-            textvariable=self.google_session_text,
-            font=self._body_font,
-            text_color="#475569",
-            anchor="w",
-            justify="left",
-        )
-        self.google_session_label_1.pack(side="left")
-
-        self.google_logout_btn_1 = ctk.CTkButton(
+        self.google_avatar_large_image = self._create_avatar_ctk_image(None, size=104)
+        self.google_session_card_1 = ctk.CTkFrame(
             out_mode_frame,
-            text="Sortir de Google",
+            fg_color="#F8FBFF",
+            corner_radius=16,
+            border_width=1,
+            border_color="#C9DAF2",
+        )
+        self.google_session_card_1.pack(anchor="w", pady=(10, 0), fill="x")
+        self.google_session_card_1.pack_forget()
+        self.google_session_card_1.grid_columnconfigure(0, weight=1)
+
+        self.google_session_avatar_1 = ctk.CTkLabel(
+            self.google_session_card_1,
+            text="",
+            image=self.google_avatar_large_image,
+        )
+        self.google_session_avatar_1.grid(row=0, column=0, pady=(18, 8), padx=24)
+        self.google_session_name_label_1 = ctk.CTkLabel(
+            self.google_session_card_1,
+            textvariable=self.google_session_name,
+            font=ctk.CTkFont(size=19, weight="bold"),
+            text_color="#0F172A",
+            anchor="center",
+            justify="center",
+        )
+        self.google_session_name_label_1.grid(row=1, column=0, padx=24, pady=(0, 4))
+        self.google_session_email_label_1 = ctk.CTkLabel(
+            self.google_session_card_1,
+            textvariable=self.google_session_email,
+            font=ctk.CTkFont(size=14),
+            text_color="#475569",
+            anchor="center",
+            justify="center",
+        )
+        self.google_session_email_label_1.grid(row=2, column=0, padx=24, pady=(0, 14))
+        self.google_session_actions_1 = ctk.CTkFrame(self.google_session_card_1, fg_color="transparent")
+        self.google_session_actions_1.grid(row=3, column=0, pady=(0, 18))
+        self.google_connected_badge_1 = ctk.CTkButton(
+            self.google_session_actions_1,
+            text="CONNECTAT",
+            width=140,
+            height=42,
+            state="disabled",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color="#DDF6E7",
+            text_color="#0E7A45",
+            hover=False,
+            border_width=0,
+        )
+        self.google_connected_badge_1.pack(side="left", padx=(0, 12))
+        self.google_logout_btn_1 = ctk.CTkButton(
+            self.google_session_actions_1,
+            text="Tancar sessio",
             command=self.google_logout_clicked,
-            width=170,
-            height=self._action_btn_height,
+            width=160,
+            height=42,
             font=self._action_btn_font,
-            fg_color="#E5E7EB",
-            hover_color="#D1D5DB",
+            fg_color="#FFFFFF",
+            hover_color="#F3F4F6",
             text_color="#1F2937",
             border_width=1,
             border_color="#CBD5E1",
         )
-        self.google_logout_btn_1.pack(anchor="w", pady=(10, 0))
-        self.google_logout_btn_1.pack_forget()
-
-        self.mode_radio_csv_1 = ctk.CTkRadioButton(
-            out_mode_radios, text="CSV",
-            variable=self.output_mode, value="csv",
-            command=self._refresh_ui,
-            font=self._body_font,
-        )
-        self.mode_radio_csv_1.pack(side="left")
-
-        # CSV output row
-        self.out_file_row = ctk.CTkFrame(self.out_card, fg_color="transparent")
-        self.out_file_row.grid(
-            row=2,
-            column=1,
-            padx=self._card_inner_padx,
-            pady=(0, 12),
-        )
-        self.out_file_row.grid_columnconfigure(1, weight=0)
-
-        self.output_file_entry = file_row(
-            parent=self.out_file_row,
-            row=0,
-            label="Fitxer de sortida (CSV)",
-            var=self.output_file_path,
-            save=True,
-            types=[("CSV", "*.csv")],
-            icon_color=UPC_BLUE,
-        )
-        self.output_file_entry.configure(width=self._compact_form_width)
-        self.output_file_entry.grid_configure(sticky="w")
+        self.google_logout_btn_1.pack(side="left")
 
         # Sheets rows
         self.out_sheets_row = ctk.CTkFrame(self.out_card, fg_color="transparent")
@@ -1062,21 +1081,15 @@ class App(ctk.CTk):
         mode_frame2 = ctk.CTkFrame(card2, fg_color="transparent")
         mode_frame2.grid(row=0, column=1, padx=self._card_inner_padx, pady=(self._card_inner_pady, 10))
 
-        mode_frame2_radios = ctk.CTkFrame(mode_frame2, fg_color="transparent")
-        mode_frame2_radios.pack(anchor="w")
-
-        self.mode_radio_sheets_2 = ctk.CTkRadioButton(
-            mode_frame2_radios,
+        ctk.CTkLabel(
+            mode_frame2,
             text="Google Sheets",
-            variable=self.html_input_mode,
-            value="sheets_oauth",
-            command=self._refresh_html_ui,
-            font=self._body_font,
-        )
-        self.mode_radio_sheets_2.pack(side="left", padx=(0, 18))
+            font=self._field_label_font,
+            text_color="#1C2B34",
+        ).pack(anchor="w")
 
         self.google_login_btn_2 = ctk.CTkButton(
-            mode_frame2_radios,
+            mode_frame2,
             text="Iniciar sessió amb Google",
             command=self.google_login_clicked,
             width=230,
@@ -1091,65 +1104,71 @@ class App(ctk.CTk):
             corner_radius=10,
         )
 
-        self.google_session_row_2 = ctk.CTkFrame(mode_frame2, fg_color="transparent")
-        self.google_session_row_2.pack(anchor="w", pady=(6, 0))
-        self.google_session_avatar_2 = ctk.CTkLabel(
-            self.google_session_row_2, text="", image=self.google_logo_image
-        )
-        self.google_session_label_2 = ctk.CTkLabel(
-            self.google_session_row_2,
-            textvariable=self.google_session_text,
-            font=self._body_font,
-            text_color="#475569",
-            anchor="w",
-            justify="left",
-        )
-        self.google_session_label_2.pack(side="left")
-
-        self.google_logout_btn_2 = ctk.CTkButton(
+        self.google_session_card_2 = ctk.CTkFrame(
             mode_frame2,
-            text="Sortir de Google",
+            fg_color="#F8FBFF",
+            corner_radius=16,
+            border_width=1,
+            border_color="#C9DAF2",
+        )
+        self.google_session_card_2.pack(anchor="w", pady=(10, 0), fill="x")
+        self.google_session_card_2.pack_forget()
+        self.google_session_card_2.grid_columnconfigure(0, weight=1)
+
+        self.google_session_avatar_2 = ctk.CTkLabel(
+            self.google_session_card_2,
+            text="",
+            image=self.google_avatar_large_image,
+        )
+        self.google_session_avatar_2.grid(row=0, column=0, pady=(18, 8), padx=24)
+        self.google_session_name_label_2 = ctk.CTkLabel(
+            self.google_session_card_2,
+            textvariable=self.google_session_name,
+            font=ctk.CTkFont(size=19, weight="bold"),
+            text_color="#0F172A",
+            anchor="center",
+            justify="center",
+        )
+        self.google_session_name_label_2.grid(row=1, column=0, padx=24, pady=(0, 4))
+        self.google_session_email_label_2 = ctk.CTkLabel(
+            self.google_session_card_2,
+            textvariable=self.google_session_email,
+            font=ctk.CTkFont(size=14),
+            text_color="#475569",
+            anchor="center",
+            justify="center",
+        )
+        self.google_session_email_label_2.grid(row=2, column=0, padx=24, pady=(0, 14))
+        self.google_session_actions_2 = ctk.CTkFrame(self.google_session_card_2, fg_color="transparent")
+        self.google_session_actions_2.grid(row=3, column=0, pady=(0, 18))
+        self.google_connected_badge_2 = ctk.CTkButton(
+            self.google_session_actions_2,
+            text="CONNECTAT",
+            width=140,
+            height=42,
+            state="disabled",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color="#DDF6E7",
+            text_color="#0E7A45",
+            hover=False,
+            border_width=0,
+        )
+        self.google_connected_badge_2.pack(side="left", padx=(0, 12))
+        self.google_logout_btn_2 = ctk.CTkButton(
+            self.google_session_actions_2,
+            text="Tancar sessio",
             command=self.google_logout_clicked,
-            width=170,
-            height=self._action_btn_height,
+            width=160,
+            height=42,
             font=self._action_btn_font,
-            fg_color="#E5E7EB",
-            hover_color="#D1D5DB",
+            fg_color="#FFFFFF",
+            hover_color="#F3F4F6",
             text_color="#1F2937",
             border_width=1,
             border_color="#CBD5E1",
         )
-        self.google_logout_btn_2.pack(anchor="w", pady=(10, 0))
-        self.google_logout_btn_2.pack_forget()
-
-        self.mode_radio_csv_2 = ctk.CTkRadioButton(
-            mode_frame2_radios,
-            text="CSV",
-            variable=self.html_input_mode,
-            value="csv",
-            command=self._refresh_html_ui,
-            font=self._body_font,
-        )
-        self.mode_radio_csv_2.pack(side="left")
-        self.google_login_btn_2.pack(side="left", padx=(24, 0))
-
-        self.html_csv_row = ctk.CTkFrame(card2, fg_color="transparent")
-        self.html_csv_row.grid(row=1, column=1, padx=self._card_inner_padx, pady=(0, 10))
-        self.html_csv_row.grid_columnconfigure(1, weight=0)
-
-        self.html_csv_entry = file_row(
-            parent=self.html_csv_row,
-            row=0,
-            label="CSV d'entrada (editat)",
-            var=self.html_input_csv_path,
-            save=False,
-            types=[("CSV", "*.csv")],
-            icon_color=UPC_BLUE,
-            button_text="Explora...",
-            # NO tooltip aquí
-        )
-        self.html_csv_entry.configure(width=self._compact_form_width)
-        self.html_csv_entry.grid_configure(sticky="w")
+        self.google_logout_btn_2.pack(side="left")
+        self.google_login_btn_2.pack(anchor="w", pady=(10, 0))
 
         self.html_sheets_row = ctk.CTkFrame(card2, fg_color="transparent")
         self.html_sheets_row.grid(row=3, column=1, padx=self._card_inner_padx, pady=(0, 6))
@@ -1158,7 +1177,7 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(
             self.html_sheets_row,
-            text="Selecciona o crea el Google Sheets",
+            text="Selecciona el Google Sheets",
             font=self._field_label_font,
             text_color="#0F172A",
         ).grid(row=0, column=0, columnspan=2, padx=6, pady=(0, 10))
@@ -1176,63 +1195,13 @@ class App(ctk.CTk):
         self.html_sheet_browse_wrap = ctk.CTkFrame(self.html_sheet_target_panel, fg_color="transparent")
         self.html_sheet_browse_wrap.grid(row=0, column=0, padx=12, pady=12, sticky="ew")
         self.html_sheet_browse_wrap.grid_columnconfigure(0, weight=1)
-        self.html_sheet_browse_wrap.grid_columnconfigure(1, weight=1)
         self.browse_sheets_btn_2 = ctk.CTkButton(
             self.html_sheet_browse_wrap,
             text="Examinar Google Sheets",
             width=220,
             command=self.browse_google_sheets_html_clicked,
         )
-        self.browse_sheets_btn_2.grid(row=0, column=0, padx=(0, 8), pady=0, sticky="ew")
-
-        self.new_sheets_btn_2 = ctk.CTkButton(
-            self.html_sheet_browse_wrap,
-            text="Nou Google Sheets",
-            width=220,
-            command=self.new_google_sheets_html_clicked,
-        )
-        self.new_sheets_btn_2.grid(row=0, column=1, padx=(8, 0), pady=0, sticky="ew")
-
-        self.html_sheet_new_wrap = ctk.CTkFrame(self.html_sheet_target_panel, fg_color="transparent")
-        self.html_sheet_new_wrap.grid(row=1, column=0, padx=12, pady=(0, 12), sticky="ew")
-        self.html_sheet_new_wrap.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(
-            self.html_sheet_new_wrap,
-            text="Títol del nou Google Sheet",
-            font=self._eyebrow_font,
-            text_color="#5B6B80",
-        ).grid(
-            row=0, column=0, padx=(4, 10), pady=(0, 6), sticky="w"
-        )
-        self.html_sheet_title_entry = ctk.CTkEntry(
-            self.html_sheet_new_wrap,
-            textvariable=self.html_sheet_title,
-            placeholder_text="Nom del nou Google Sheet",
-            placeholder_text_color="#6B7280",
-            font=self._input_italic_font,
-            width=self._compact_form_width,
-            height=34,
-        )
-        self.html_sheet_title_entry.grid(row=0, column=1, padx=(0, 6), pady=(0, 6), sticky="w")
-        ctk.CTkLabel(
-            self.html_sheet_new_wrap,
-            text="Pestanya on es desarà",
-            font=self._eyebrow_font,
-            text_color="#5B6B80",
-        ).grid(
-            row=1, column=0, padx=(4, 10), pady=(0, 0), sticky="w"
-        )
-        self.html_sheet_tab_entry = ctk.CTkEntry(
-            self.html_sheet_new_wrap,
-            textvariable=self.html_sheet_tab,
-            placeholder_text="Nom de la pestanya de destí",
-            placeholder_text_color="#6B7280",
-            font=self._input_italic_font,
-            width=self._compact_form_width,
-            height=34,
-        )
-        self.html_sheet_tab_entry.grid(row=1, column=1, padx=(0, 6), pady=(0, 0), sticky="w")
-        self.html_sheet_new_wrap.grid_remove()
+        self.browse_sheets_btn_2.grid(row=0, column=0, padx=0, pady=0, sticky="ew")
 
         self.html_google_auth_row = ctk.CTkFrame(card2, fg_color="transparent")
         self.html_google_auth_row.grid(row=4, column=1, padx=self._card_inner_padx, pady=(0, 4))
@@ -1438,26 +1407,29 @@ class App(ctk.CTk):
     def _load_google_profile_data(self):
         token_path = self._resolve_token_storage_path(self._token_file_path())
         if not os.path.exists(token_path):
+            self._google_profile_name = ""
             self._google_profile_email = ""
-            return None, ""
+            return None, "", ""
         try:
             with open(token_path, "r", encoding="utf-8") as f:
                 token_data = json.load(f)
         except Exception:
+            self._google_profile_name = ""
             self._google_profile_email = ""
-            return None, ""
+            return None, "", ""
 
         access_token = (token_data.get("access_token") or "").strip()
         if self._google_profile_image is not None and self._google_profile_image_token == access_token:
-            return self._google_profile_image, self._google_profile_email
+            return self._google_profile_image, self._google_profile_name, self._google_profile_email
 
+        fallback_name = ""
         fallback_email = ""
         fallback_picture_url = ""
         id_token_data = self._decode_jwt_payload((token_data.get("id_token") or "").strip())
         if id_token_data:
+            fallback_name = (id_token_data.get("name") or "").strip()
             fallback_email = (
                 (id_token_data.get("email") or "").strip()
-                or (id_token_data.get("name") or "").strip()
             )
             fallback_picture_url = (id_token_data.get("picture") or "").strip()
 
@@ -1473,30 +1445,29 @@ class App(ctk.CTk):
             except Exception:
                 payload = {}
 
-        email = (
-            (payload.get("email") or "").strip()
-            or (payload.get("name") or "").strip()
-            or fallback_email
-        )
+        name = (payload.get("name") or "").strip() or fallback_name
+        email = (payload.get("email") or "").strip() or fallback_email
         picture_url = (payload.get("picture") or "").strip() or fallback_picture_url
-        image = None
+        pil_img = None
         if picture_url:
             try:
                 img_req = Request(picture_url, headers={"User-Agent": "Mozilla/5.0"})
                 with urlopen(img_req, timeout=5) as img_response:
                     raw = img_response.read()
                 pil_img = Image.open(io.BytesIO(raw)).convert("RGBA")
-                image = ctk.CTkImage(light_image=pil_img, size=(28, 28))
             except Exception:
-                image = None
+                pil_img = None
+
+        image = self._create_avatar_ctk_image(pil_img, size=104)
 
         self._google_profile_image = image
         self._google_profile_image_token = access_token
+        self._google_profile_name = name
         self._google_profile_email = email
-        return image, email
+        return image, name, email
 
     def _load_google_profile_image(self):
-        image, _email = self._load_google_profile_data()
+        image, _name, _email = self._load_google_profile_data()
         return image
 
     def _refresh_home_nav_button_state(self):
@@ -1556,16 +1527,15 @@ class App(ctk.CTk):
     def _update_google_action_buttons(self):
         session_active = self._is_google_session_available()
         in_progress = self._google_auth_in_progress
-        login_text = "Sortir de la sessió" if session_active else "Iniciar sessió amb Google"
         btn_image = self.google_logo_image
-        session_label = ""
+        profile_name = ""
+        profile_email = ""
         if session_active:
-            profile_image, profile_email = self._load_google_profile_data()
+            profile_image, profile_name, profile_email = self._load_google_profile_data()
             if profile_image is not None:
                 btn_image = profile_image
-            if profile_email:
-                session_label = f"Sessió: {profile_email}"
-        self.google_session_text.set(session_label)
+        self.google_session_name.set(profile_name or "Sessio de Google activa")
+        self.google_session_email.set(profile_email or "")
         for avatar_name in ("google_session_avatar_1", "google_session_avatar_2"):
             avatar = getattr(self, avatar_name, None)
             if avatar:
@@ -1579,19 +1549,26 @@ class App(ctk.CTk):
                 continue
             try:
                 btn.configure(
-                    text=login_text if not in_progress else "Processant...",
-                    command=self.google_logout_clicked if session_active else self.google_login_clicked,
-                    image=btn_image,
+                    text="Iniciar sessió amb Google" if not in_progress else "Processant...",
+                    command=self.google_login_clicked,
+                    image=self.google_logo_image,
                     fg_color="#D9E3E8",
-                    hover_color="#D9E3E8",
+                    hover_color="#C8D6DD",
                     text_color="#1C2B34",
                     border_color="#8FB7C8",
                 )
             except Exception:
                 pass
+            try:
+                if session_active and btn.winfo_manager():
+                    btn.pack_forget()
+                elif not session_active and not btn.winfo_manager():
+                    btn.pack(anchor="w", pady=(10, 0))
+            except Exception:
+                pass
         for row_name, mode_name, mode_value in (
-            ("google_session_row_1", "output_mode", "sheets_oauth"),
-            ("google_session_row_2", "html_input_mode", "sheets_oauth"),
+            ("google_session_card_1", "output_mode", "sheets_oauth"),
+            ("google_session_card_2", "html_input_mode", "sheets_oauth"),
         ):
             row = getattr(self, row_name, None)
             mode_var = getattr(self, mode_name, None)
@@ -1601,12 +1578,20 @@ class App(ctk.CTk):
                 session_active
                 and not in_progress
                 and mode_var.get() == mode_value
-                and bool(session_label.strip())
             )
             if visible and not row.winfo_manager():
-                row.pack(anchor="w", pady=(6, 0))
+                row.pack(anchor="w", pady=(10, 0), fill="x")
             elif not visible and row.winfo_manager():
                 row.pack_forget()
+
+        for btn_name in ("google_logout_btn_1", "google_logout_btn_2"):
+            btn = getattr(self, btn_name, None)
+            if not btn:
+                continue
+            try:
+                btn.configure(state="normal" if session_active and not in_progress else "disabled")
+            except Exception:
+                pass
 
     def _style_button_white(self, btn):
         try:
@@ -1994,6 +1979,8 @@ class App(ctk.CTk):
 
         self._google_profile_image = None
         self._google_profile_image_token = ""
+        self._google_profile_name = ""
+        self._google_profile_email = ""
         self._update_google_auth_status()
         self._run_live_validation()
 
@@ -2292,10 +2279,7 @@ class App(ctk.CTk):
         self._is_restoring_state = True
         try:
             if isinstance(scrape_config, dict):
-                output_mode = (scrape_config.get("output_mode") or "csv").strip()
-                if output_mode not in {"csv", "sheets_oauth"}:
-                    output_mode = "csv"
-                self.output_mode.set(output_mode)
+                self.output_mode.set("sheets_oauth")
                 self.output_file_path.set(self._sanitize_persisted_text(scrape_config.get("output_file_path")))
                 self.output_sheet_title.set(self._sanitize_persisted_text(scrape_config.get("output_sheet_title")))
                 self.output_sheet_tab.set(
@@ -2311,10 +2295,7 @@ class App(ctk.CTk):
                 self.token_file.set(token_saved or self._default_token_file)
 
             if isinstance(export_config, dict):
-                html_input_mode = (export_config.get("html_input_mode") or "csv").strip()
-                if html_input_mode not in {"csv", "sheets_oauth"}:
-                    html_input_mode = "csv"
-                self.html_input_mode.set(html_input_mode)
+                self.html_input_mode.set("sheets_oauth")
                 self.html_input_csv_path.set(self._sanitize_persisted_text(export_config.get("html_input_csv_path")))
                 self.html_sheet_title.set(self._sanitize_persisted_text(export_config.get("html_sheet_title")))
                 self.html_sheet_tab.set(
@@ -2466,39 +2447,17 @@ class App(ctk.CTk):
     def _apply_selected_recent_sheet_html(self):
         session_active = self._is_google_session_available() and not self._google_auth_in_progress
         browse_state = "normal" if session_active else "disabled"
-        entry_state = "normal" if session_active else "disabled"
-        show_new_form = self.html_sheet_target_mode.get() == "Nou"
         try:
             if hasattr(self, "html_sheet_browse_wrap"):
                 browse_managed = str(self.html_sheet_browse_wrap.winfo_manager()) == "grid"
                 if not browse_managed:
                     self.html_sheet_browse_wrap.grid(row=0, column=0, padx=12, pady=12, sticky="ew")
-            if hasattr(self, "html_sheet_new_wrap"):
-                new_managed = str(self.html_sheet_new_wrap.winfo_manager()) == "grid"
-                if show_new_form and not new_managed:
-                    self.html_sheet_new_wrap.grid(row=1, column=0, padx=12, pady=(0, 12), sticky="ew")
-                elif not show_new_form and new_managed:
-                    self.html_sheet_new_wrap.grid_remove()
         except Exception:
             pass
         try:
             self.browse_sheets_btn_2.configure(state=browse_state)
         except Exception:
             pass
-        try:
-            self.new_sheets_btn_2.configure(state=browse_state)
-        except Exception:
-            pass
-        try:
-            self.html_sheet_title_entry.configure(state=entry_state)
-        except Exception:
-            pass
-        try:
-            self.html_sheet_tab_entry.configure(state=entry_state)
-        except Exception:
-            pass
-        self._show_entry_placeholder_now(getattr(self, "html_sheet_title_entry", None))
-        self._show_entry_placeholder_now(getattr(self, "html_sheet_tab_entry", None))
         self._run_live_validation()
 
     def _remember_recent_sheet(self, title: str, tab: str = ""):
@@ -3200,43 +3159,24 @@ class App(ctk.CTk):
 
     # REFRESH D'ESTAT UI
     def _refresh_ui(self):
-        mode = self.output_mode.get()
-        if mode == "sheets_oauth":
-            self.out_file_row.grid_remove()
-            self.google_auth_row.grid()
-            if hasattr(self, "google_login_btn_1") and not self.google_login_btn_1.winfo_manager():
-                self.google_login_btn_1.pack(side="left", padx=(24, 0))
-
-        else:  # csv
-            self.out_sheets_row.grid_remove()
-            self.google_auth_row.grid_remove()
-            self.out_file_row.grid()
-            if hasattr(self, "google_login_btn_1") and self.google_login_btn_1.winfo_manager():
-                self.google_login_btn_1.pack_forget()
-            if hasattr(self, "google_logout_btn_1") and self.google_logout_btn_1.winfo_manager():
-                self.google_logout_btn_1.pack_forget()
+        if self.output_mode.get() != "sheets_oauth":
+            self.output_mode.set("sheets_oauth")
+            return
+        self.google_auth_row.grid()
+        if hasattr(self, "google_login_btn_1") and not self.google_login_btn_1.winfo_manager():
+            self.google_login_btn_1.pack(anchor="w", pady=(10, 0))
         self._update_google_auth_status()
         self._sync_google_sheets_rows_visibility()
         self._run_live_validation()
 
     def _refresh_html_ui(self):
-        mode = self.html_input_mode.get()
-        if mode == "sheets_oauth":
-            self.html_csv_row.grid_remove()
-            self.html_google_auth_row.grid()
-            if hasattr(self, "google_login_btn_2") and not self.google_login_btn_2.winfo_manager():
-                self.google_login_btn_2.pack(side="left", padx=(24, 0))
-            self.log2.delete("1.0", "end")
-
-        else:  # csv
-            self.html_sheets_row.grid_remove()
-            self.html_google_auth_row.grid_remove()
-            self.html_csv_row.grid()
-            if hasattr(self, "google_login_btn_2") and self.google_login_btn_2.winfo_manager():
-                self.google_login_btn_2.pack_forget()
-            if hasattr(self, "google_logout_btn_2") and self.google_logout_btn_2.winfo_manager():
-                self.google_logout_btn_2.pack_forget()
-            self.log2.delete("1.0", "end")
+        if self.html_input_mode.get() != "sheets_oauth":
+            self.html_input_mode.set("sheets_oauth")
+            return
+        self.html_google_auth_row.grid()
+        if hasattr(self, "google_login_btn_2") and not self.google_login_btn_2.winfo_manager():
+            self.google_login_btn_2.pack(anchor="w", pady=(10, 0))
+        self.log2.delete("1.0", "end")
         self._update_google_auth_status()
         self._sync_google_sheets_rows_visibility()
         self._run_live_validation()
