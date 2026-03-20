@@ -202,6 +202,7 @@ class App(ctk.CTk):
         self._content_max_width = 960
         self._centered_content_areas = []
         self._home_shadow_job = None
+        self._restoring_visible_section = False
 
         # Fix icona barra de tasques Windows (més fiable a l'EXE)
         if ctypes:
@@ -2894,7 +2895,43 @@ class App(ctk.CTk):
             return
         self._refresh_centered_content_areas()
         self._refresh_responsive_form_widths()
+        self._ensure_visible_section_state()
         return
+
+    def _ensure_visible_section_state(self):
+        if getattr(self, "_restoring_visible_section", False):
+            return
+
+        self._restoring_visible_section = True
+        try:
+            showing_home = bool(getattr(self, "_is_home_visible", False))
+
+            if showing_home:
+                if hasattr(self, "workspace_frame") and self.workspace_frame.winfo_manager():
+                    self.workspace_frame.grid_remove()
+                if hasattr(self, "home_frame") and not self.home_frame.winfo_manager():
+                    self.home_frame.grid()
+                self._refresh_home_nav_button_state()
+                return
+
+            if hasattr(self, "home_frame") and self.home_frame.winfo_manager():
+                self.home_frame.grid_remove()
+            if hasattr(self, "workspace_frame") and not self.workspace_frame.winfo_manager():
+                self.workspace_frame.grid()
+
+            desired_tab = getattr(self, "current_tab_name", "") or getattr(self, "tab_name_scrape", "")
+            tabs = getattr(self, "tabs", None)
+            if tabs and desired_tab:
+                try:
+                    current_tab = tabs.get()
+                except Exception:
+                    current_tab = ""
+                if current_tab != desired_tab:
+                    tabs.set(desired_tab)
+                self._fix_tab_text_colors(tabs)
+            self._refresh_home_nav_button_state()
+        finally:
+            self._restoring_visible_section = False
 
     def _set_log_details_visible(self, visible: bool):
         if bool(visible) == bool(getattr(self, "_log_details_open", False)):
