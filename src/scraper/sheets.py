@@ -172,6 +172,7 @@ def export_rows_to_google_sheets_oauth(
     oauth_client_json: str = "oauth_client.json",
     token_file: str = "token.json",
     log=None,
+    create_if_missing: bool = False,
 ):
     def _log(m: str):
         if log:
@@ -260,6 +261,10 @@ def export_rows_to_google_sheets_oauth(
             {"userEnteredValue": topic}
             for topic in SHEETS_TOPIC_OPTIONS
         ]
+        status_dropdown_values = [
+            {"userEnteredValue": status}
+            for status in ["Pendent", "Aprovat", "Rebutjat"]
+        ]
         subtopic_dropdown_values = [
             {"userEnteredValue": subtopic}
             for subtopic in (subtopic_options or [])
@@ -285,6 +290,14 @@ def export_rows_to_google_sheets_oauth(
                     "condition": {
                         "type": "ONE_OF_LIST",
                         "values": subtopic_dropdown_values,
+                    }
+                }
+            if idx == 4:
+                column["columnType"] = "DROPDOWN"
+                column["dataValidationRule"] = {
+                    "condition": {
+                        "type": "ONE_OF_LIST",
+                        "values": status_dropdown_values,
                     }
                 }
             columns.append(column)
@@ -700,18 +713,44 @@ def export_rows_to_google_sheets_oauth(
         sh = _open_sheet_lenient(client, spreadsheet_title, log=log, spreadsheet_id=spreadsheet_id)
         _log(f"Spreadsheet obert: {sh.title}")
     except Exception as e:
-        raise RuntimeError(
-            f"No s'ha pogut obrir el Google Sheet '{spreadsheet_title}': {_format_google_error(e)}"
-        ) from e
+        if create_if_missing:
+            _log(f"Google Sheets: el sheet '{spreadsheet_title}' no existeix, es crearà…")
+            try:
+                sh = client.create(spreadsheet_title)
+                _log(f"Google Sheets: sheet creat: {spreadsheet_title}")
+            except Exception as create_e:
+                raise RuntimeError(
+                    f"No s'ha pogut crear el Google Sheet '{spreadsheet_title}': {_format_google_error(create_e)}"
+                ) from create_e
+        else:
+            raise RuntimeError(
+                f"No s'ha pogut obrir el Google Sheet '{spreadsheet_title}': {_format_google_error(e)}"
+            ) from e
 
     try:
         ws = sh.worksheet(worksheet_name)
         _log(f"Pestanya oberta: {worksheet_name}")
     except Exception as e:
-        raise RuntimeError(
-            f"No s'ha trobat la pestanya '{worksheet_name}' al sheet '{spreadsheet_title}': "
-            f"{_format_google_error(e)}"
-        ) from e
+        if create_if_missing:
+            _log(f"Google Sheets: la pestanya '{worksheet_name}' no existeix, es crearà…")
+            try:
+                ws = sh.add_worksheet(
+                    title=worksheet_name,
+                    rows=1000,
+                    cols=max(11, len(SHEETS_COLUMNS)),
+                )
+                ws.append_row(SHEETS_COLUMNS, value_input_option="RAW")
+                _log(f"Google Sheets: pestanya creada: {worksheet_name}")
+            except Exception as create_e:
+                raise RuntimeError(
+                    f"No s'ha pogut crear la pestanya '{worksheet_name}' al sheet '{spreadsheet_title}': "
+                    f"{_format_google_error(create_e)}"
+                ) from create_e
+        else:
+            raise RuntimeError(
+                f"No s'ha trobat la pestanya '{worksheet_name}' al sheet '{spreadsheet_title}': "
+                f"{_format_google_error(e)}"
+            ) from e
 
     prepared_rows: List[List[str]] = []
     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -744,6 +783,20 @@ def export_rows_to_google_sheets_oauth(
         _log(f"Contingut bolcat a la plantilla: {len(prepared_rows)} files.")
     else:
         _log("No hi ha files noves per bolcar a la plantilla.")
+
+    if create_if_missing:
+        try:
+            _apply_review_sheet_formatting(
+                ws,
+                used_row_count=max(2, len(prepared_rows) + 1),
+                subtopic_options=_collect_subtopic_options([], prepared_rows),
+            )
+            _log("Google Sheets: format i desplegables aplicats.")
+        except Exception as format_e:
+            raise RuntimeError(
+                f"No s'ha pogut aplicar el format del Google Sheet '{spreadsheet_title}/{worksheet_name}': "
+                f"{_format_google_error(format_e)}"
+            ) from format_e
 
 
 def read_rows_from_sheets_oauth(

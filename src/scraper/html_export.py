@@ -111,7 +111,7 @@ def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
             out_lines.append(
                 '<h2 style="padding: 0; margin: 0;">'
                 f'<button type="button" class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#{qid}" aria-expanded="false" aria-controls="{qid}" data-upc-faq-toggle="1" '
-                'style="width: 100%; text-align: left; font-size: 18px; background: transparent; padding: 30px 36px 30px 18px; '
+                'style="width: 100%; text-align: left; font-size: 18px; background: transparent; padding: 30px 36px 30px 34px; '
                 'font-weight: 500; color: #00769d; position: relative; border: 0; border-top: 1px solid #D1D1D1; '
                 'box-shadow: none; cursor: pointer;">'
                 f"{q_html}"
@@ -123,7 +123,7 @@ def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
             )
             out_lines.append('<div style="border-top: 0; padding: 0 18px 18px; background: transparent;">')
             out_lines.append(
-                '<div style="margin: 0; font-size: 16px; font-weight: 300; line-height: 1.45; color: #636363;">'
+                '<div style="margin: 0; font-size: 16px; font-weight: 300; padding: 0px 0px 0px 16px; line-height: 1.45; color: #636363;">'
                 f"{a_html}</div>"
             )
             out_lines.append("</div></div></div>")
@@ -157,7 +157,7 @@ def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
                 '<h2 style="padding: 0; margin: 0;">'
                 f'<button type="button" class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#{topic_id}" aria-expanded="false" aria-controls="{topic_id}" data-upc-faq-toggle="1" '
                 'style="width: 100%; text-align: left; font-size: 24px; background: transparent; padding: 30px 36px 30px 18px; '
-                'font-weight: 600; color: #00769D; letter-spacing: .2px; position: relative; border: 0; border-top: 1px solid #D1D1D1; '
+                'font-weight: 500; color: #4A4A4A; letter-spacing: .2px; position: relative; border: 0; border-top: 1px solid #D1D1D1; '
                 'box-shadow: none; cursor: pointer;">'
                 f"{html.escape(topic)}"
                 "</button></h2>"

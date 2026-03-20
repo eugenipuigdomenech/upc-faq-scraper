@@ -312,6 +312,8 @@ def run_pipeline(
     output_file_path: Optional[str] = None,
     output_sheet_title: Optional[str] = None,
     output_sheet_tab: Optional[str] = None,
+    output_sheet_id: Optional[str] = None,
+    create_output_sheet_if_missing: bool = False,
     oauth_client_json: str = "oauth_client.json",
     token_file: str = "token.json",
     log=None,
@@ -357,9 +359,11 @@ def run_pipeline(
             rows=rows,
             spreadsheet_title=output_sheet_title,
             worksheet_name=output_sheet_tab,
+            spreadsheet_id=output_sheet_id,
             oauth_client_json=oauth_client_json,
             token_file=token_file,
             log=log,
+            create_if_missing=create_output_sheet_if_missing,
         )
         subtopic_errors = 0
         for row in rows:

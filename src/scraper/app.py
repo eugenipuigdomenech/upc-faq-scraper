@@ -847,7 +847,7 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(
             self.out_sheets_row,
-            text="Tria el Google Sheets",
+            text="Selecciona o crea el Google Sheets",
             font=self._field_label_font,
             text_color="#1C2B34",
         ).grid(row=1, column=0, columnspan=2, padx=6, pady=(0, 10))
@@ -877,7 +877,7 @@ class App(ctk.CTk):
 
         self.new_sheets_btn_1 = ctk.CTkButton(
             self.sheet_browse_wrap,
-            text="Escriure manualment",
+            text="Nou Google Sheets",
             width=220,
             command=self.new_google_sheets_scrape_clicked,
         )
@@ -886,26 +886,26 @@ class App(ctk.CTk):
         self.sheet_new_wrap = ctk.CTkFrame(self.sheet_target_panel, fg_color="transparent")
         self.sheet_new_wrap.grid(row=1, column=0, padx=12, pady=(0, 12), sticky="ew")
         self.sheet_new_wrap.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(self.sheet_new_wrap, text="Títol del Google Sheet", font=self._eyebrow_font, text_color="#5B6B80").grid(
+        ctk.CTkLabel(self.sheet_new_wrap, text="Títol del nou Google Sheet", font=self._eyebrow_font, text_color="#5B6B80").grid(
             row=0, column=0, padx=(4, 10), pady=(0, 6), sticky="w"
         )
         self.output_sheet_title_entry = ctk.CTkEntry(
             self.sheet_new_wrap,
             textvariable=self.output_sheet_title,
-            placeholder_text="Escriu el titol",
+            placeholder_text="Nom del nou Google Sheet",
             placeholder_text_color="#6B7280",
             font=self._input_italic_font,
             width=self._compact_form_width,
             height=34,
         )
         self.output_sheet_title_entry.grid(row=0, column=1, padx=(0, 6), pady=(0, 6), sticky="w")
-        ctk.CTkLabel(self.sheet_new_wrap, text="Nom de la pestanya", font=self._eyebrow_font, text_color="#5B6B80").grid(
+        ctk.CTkLabel(self.sheet_new_wrap, text="Pestanya on es desarà", font=self._eyebrow_font, text_color="#5B6B80").grid(
             row=1, column=0, padx=(4, 10), pady=(0, 0), sticky="w"
         )
         self.output_sheet_tab_entry = ctk.CTkEntry(
             self.sheet_new_wrap,
             textvariable=self.output_sheet_tab,
-            placeholder_text="Escriu nom de la pestanya",
+            placeholder_text="Nom de la pestanya de destí",
             placeholder_text_color="#6B7280",
             font=self._input_italic_font,
             width=self._compact_form_width,
@@ -1158,7 +1158,7 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(
             self.html_sheets_row,
-            text="Tria el Google Sheets",
+            text="Selecciona o crea el Google Sheets",
             font=self._field_label_font,
             text_color="#0F172A",
         ).grid(row=0, column=0, columnspan=2, padx=6, pady=(0, 10))
@@ -1187,7 +1187,7 @@ class App(ctk.CTk):
 
         self.new_sheets_btn_2 = ctk.CTkButton(
             self.html_sheet_browse_wrap,
-            text="Escriure manualment",
+            text="Nou Google Sheets",
             width=220,
             command=self.new_google_sheets_html_clicked,
         )
@@ -1198,7 +1198,7 @@ class App(ctk.CTk):
         self.html_sheet_new_wrap.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
             self.html_sheet_new_wrap,
-            text="Títol del Google Sheet",
+            text="Títol del nou Google Sheet",
             font=self._eyebrow_font,
             text_color="#5B6B80",
         ).grid(
@@ -1207,7 +1207,7 @@ class App(ctk.CTk):
         self.html_sheet_title_entry = ctk.CTkEntry(
             self.html_sheet_new_wrap,
             textvariable=self.html_sheet_title,
-            placeholder_text="Escriu el titol",
+            placeholder_text="Nom del nou Google Sheet",
             placeholder_text_color="#6B7280",
             font=self._input_italic_font,
             width=self._compact_form_width,
@@ -1216,7 +1216,7 @@ class App(ctk.CTk):
         self.html_sheet_title_entry.grid(row=0, column=1, padx=(0, 6), pady=(0, 6), sticky="w")
         ctk.CTkLabel(
             self.html_sheet_new_wrap,
-            text="Nom de la pestanya",
+            text="Pestanya on es desarà",
             font=self._eyebrow_font,
             text_color="#5B6B80",
         ).grid(
@@ -1225,7 +1225,7 @@ class App(ctk.CTk):
         self.html_sheet_tab_entry = ctk.CTkEntry(
             self.html_sheet_new_wrap,
             textvariable=self.html_sheet_tab,
-            placeholder_text="Escriu nom de la pestanya",
+            placeholder_text="Nom de la pestanya de destí",
             placeholder_text_color="#6B7280",
             font=self._input_italic_font,
             width=self._compact_form_width,
@@ -3375,6 +3375,11 @@ class App(ctk.CTk):
                 if output_mode == "sheets_oauth" else None,
                 output_sheet_tab=self.output_sheet_tab.get().strip()
                 if output_mode == "sheets_oauth" else None,
+                output_sheet_id=(self._selected_output_sheet_id or "").strip()
+                if output_mode == "sheets_oauth" and self.sheet_target_mode.get() == "Examinar" else None,
+                create_output_sheet_if_missing=(
+                    output_mode == "sheets_oauth" and self.sheet_target_mode.get() == "Nou"
+                ),
                 output_file_path=self.output_file_path.get().strip()
                 if output_mode == "csv" else None,
                 oauth_client_json=self._oauth_client_path(),
