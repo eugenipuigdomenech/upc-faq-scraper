@@ -1,6 +1,14 @@
 import customtkinter as ctk
 from tkinter import filedialog
 
+try:
+    from scraper.settings import SURFACE_SUBTLE, TEXT_PRIMARY
+except ImportError:
+    try:
+        from ..settings import SURFACE_SUBTLE, TEXT_PRIMARY
+    except ImportError:
+        from settings import SURFACE_SUBTLE, TEXT_PRIMARY
+
 
 class ToolTip:
     def __init__(self, widget, text):
@@ -28,8 +36,8 @@ class ToolTip:
             text=self.text,
             justify="left",
             wraplength=420,
-            fg_color="#111827",
-            text_color="white",
+            fg_color=SURFACE_SUBTLE,
+            text_color=TEXT_PRIMARY,
             corner_radius=8,
             padx=10,
             pady=8,

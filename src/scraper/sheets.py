@@ -1,10 +1,9 @@
-import re
 import os
+import re
 from datetime import datetime
-from typing import Dict, List
-from bs4 import BeautifulSoup, NavigableString
 
 import gspread
+from bs4 import BeautifulSoup, NavigableString
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
@@ -165,7 +164,7 @@ def open_or_create_worksheet(sh, worksheet_name: str, rows: int = 1000, cols: in
 
 
 def export_rows_to_google_sheets_oauth(
-    rows: List[List[str]],
+    rows: list[list[str]],
     spreadsheet_title: str,
     worksheet_name: str,
     spreadsheet_id: str | None = None,
@@ -182,14 +181,14 @@ def export_rows_to_google_sheets_oauth(
         s = (s or "").replace("\u00a0", " ")
         return re.sub(r"\s+", " ", s).strip()
 
-    def _qkey(row: List[str]) -> tuple[str, str, str, str]:
+    def _qkey(row: list[str]) -> tuple[str, str, str, str]:
         topic = _norm(row[0]) if len(row) > 0 else ""
         subtopic = _norm(row[1]) if len(row) > 1 else ""
         pregunta = _norm(row[2]) if len(row) > 2 else ""
         font = _norm(row[9]) if len(row) > 9 else ""
         return (topic, subtopic, pregunta, font)
 
-    def _ans(row: List[str]) -> str:
+    def _ans(row: list[str]) -> str:
         return _norm(row[3]) if len(row) > 3 else ""
 
     def _html_to_sheet_text(value: str) -> str:
@@ -245,8 +244,8 @@ def export_rows_to_google_sheets_oauth(
         v = (value or "").strip()
         return v if v in {"Aprovat", "Pendent", "Rebutjat"} else "Pendent"
 
-    def _collect_subtopic_options(existing_rows: List[List[str]], pending_rows: List[List[str]]) -> List[str]:
-        options: List[str] = []
+    def _collect_subtopic_options(existing_rows: list[list[str]], pending_rows: list[list[str]]) -> list[str]:
+        options: list[str] = []
         seen: set[str] = set()
         for row in list(existing_rows) + list(pending_rows):
             value = _norm(row[1]) if len(row) > 1 else ""
@@ -256,7 +255,7 @@ def export_rows_to_google_sheets_oauth(
             options.append(value)
         return options
 
-    def _build_review_table_columns(subtopic_options: List[str] | None = None) -> List[Dict[str, object]]:
+    def _build_review_table_columns(subtopic_options: list[str] | None = None) -> list[dict[str, object]]:
         topic_dropdown_values = [
             {"userEnteredValue": topic}
             for topic in SHEETS_TOPIC_OPTIONS
@@ -269,9 +268,9 @@ def export_rows_to_google_sheets_oauth(
             {"userEnteredValue": subtopic}
             for subtopic in (subtopic_options or [])
         ]
-        columns: List[Dict[str, object]] = []
+        columns: list[dict[str, object]] = []
         for idx, name in enumerate(SHEETS_COLUMNS):
-            column: Dict[str, object] = {
+            column: dict[str, object] = {
                 "columnIndex": idx,
                 "columnName": name,
                 "columnType": "TEXT",
@@ -306,7 +305,7 @@ def export_rows_to_google_sheets_oauth(
     def _sync_review_table_with_status_chips(
         worksheet,
         used_row_count: int,
-        subtopic_options: List[str] | None = None,
+        subtopic_options: list[str] | None = None,
     ):
         sheet_id = worksheet.id
         table_name = f"UPCFAQTable_{sheet_id}"
@@ -340,7 +339,7 @@ def export_rows_to_google_sheets_oauth(
                 None,
             )
 
-        table_payload: Dict[str, object] = {
+        table_payload: dict[str, object] = {
             "name": table_name,
             "range": table_range,
             "rowsProperties": {
@@ -424,7 +423,7 @@ def export_rows_to_google_sheets_oauth(
     def _apply_review_sheet_formatting(
         worksheet,
         used_row_count: int,
-        subtopic_options: List[str] | None = None,
+        subtopic_options: list[str] | None = None,
     ):
         sheet_id = worksheet.id
         row_count = max(2, int(getattr(worksheet, "row_count", 1000) or 1000))
@@ -752,7 +751,7 @@ def export_rows_to_google_sheets_oauth(
                 f"{_format_google_error(e)}"
             ) from e
 
-    prepared_rows: List[List[str]] = []
+    prepared_rows: list[list[str]] = []
     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     for r in rows:
@@ -807,7 +806,7 @@ def read_rows_from_sheets_oauth(
     token_file: str = "token.json",
     log=None,
     create_if_missing: bool = False,
-) -> List[Dict[str, str]]:
+) -> list[dict[str, str]]:
     def _log(m: str):
         if log:
             log(m)
@@ -871,9 +870,9 @@ def read_rows_from_sheets_oauth(
         return []
 
     header = [h.strip() for h in values[0]]
-    out: List[Dict[str, str]] = []
+    out: list[dict[str, str]] = []
     for row in values[1:]:
-        d: Dict[str, str] = {}
+        d: dict[str, str] = {}
         for i, col in enumerate(header):
             d[col] = (row[i] if i < len(row) else "").strip()
         out.append(d)

@@ -114,6 +114,101 @@ def scrape_faqs(
             return ""
         return re.sub(r"\s+", " ", btn.get_text(" ", strip=True)).strip()
 
+    def _parse_strong_question_blocks(block) -> List[Tuple[str, str]]:
+        parsed: List[Tuple[str, str]] = []
+        current_q = ""
+        current_a_html: List[str] = []
+
+        def _extract_question_text(node) -> str:
+            if not getattr(node, "name", None):
+                return ""
+            strong = node.find(["strong", "b"], recursive=False)
+            if not strong:
+                return ""
+            strong_text = _normalize_question(strong.get_text(" ", strip=True))
+            inline_text = re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+            if not strong_text or not inline_text.startswith(strong_text):
+                return ""
+            if "?" not in strong_text:
+                return ""
+            return strong_text.split("?", 1)[0].strip() + "?"
+
+        def _extract_inline_answer_html(node) -> str:
+            node_copy = BeautifulSoup(str(node), "html.parser").find(getattr(node, "name", ""))
+            if not node_copy:
+                return ""
+            first_strong = node_copy.find(["strong", "b"], recursive=False)
+            if first_strong:
+                first_strong.decompose()
+            return _inner_html(node_copy).strip()
+
+        for node in [child for child in block.children if getattr(child, "name", None)]:
+            question = _extract_question_text(node)
+            if question:
+                if current_q and current_a_html:
+                    parsed.append((current_q, "".join(current_a_html).strip()))
+                current_q = question
+                current_a_html = []
+                inline_answer = _extract_inline_answer_html(node)
+                if inline_answer:
+                    current_a_html.append(inline_answer)
+                continue
+
+            if current_q:
+                current_a_html.append(str(node))
+
+        if current_q and current_a_html:
+            parsed.append((current_q, "".join(current_a_html).strip()))
+
+        return [(q, a) for q, a in parsed if q and a]
+
+    def _parse_nested_topic_accordion(root) -> List[Tuple[str, str, str]]:
+        parsed: List[Tuple[str, str, str]] = []
+        topic_items = root.select(':scope > .accordion-item')
+        if not topic_items:
+            topic_items = root.find_all("div", class_="accordion-item", recursive=False)
+
+        for topic_item in topic_items:
+            topic_button = topic_item.select_one(':scope > h2 button.accordion-button')
+            if not topic_button:
+                topic_button = topic_item.select_one('h2 button.accordion-button')
+            topic_title = _normalize_question(topic_button.get_text(" ", strip=True) if topic_button else "")
+            if not topic_title:
+                continue
+
+            nested_accordion = topic_item.select_one(':scope > .collapse .accordion[id^="faqAccordion-"]')
+            if not nested_accordion:
+                nested_accordion = topic_item.select_one('.accordion[id^="faqAccordion-"]')
+            if not nested_accordion:
+                continue
+
+            question_items = nested_accordion.select(':scope > .accordion-item')
+            if not question_items:
+                question_items = nested_accordion.find_all("div", class_="accordion-item", recursive=False)
+
+            for question_item in question_items:
+                question_button = question_item.select_one(':scope > h2 button.accordion-button')
+                if not question_button:
+                    question_button = question_item.select_one('h2 button.accordion-button')
+                question = _normalize_question(question_button.get_text(" ", strip=True) if question_button else "")
+                if not question:
+                    continue
+
+                answer_panel = question_item.select_one(':scope > .collapse')
+                if not answer_panel:
+                    answer_panel = question_item.select_one('.collapse')
+                if not answer_panel:
+                    continue
+
+                answer_body = answer_panel.select_one("div > div") or answer_panel.select_one("div") or answer_panel
+                answer = _inner_html(answer_body).strip()
+                if not answer:
+                    continue
+
+                parsed.append((topic_title, question, answer))
+
+        return parsed
+
     numbered_blocks: List[Tuple[str, List[Tuple[str, str]]]] = []
     for item in soup.select(".accordion-item"):
         body = item.select_one(".accordion-body")
@@ -194,6 +289,14 @@ def scrape_faqs(
         if faqs:
             return faqs
 
+    topic_root = soup.select_one("#faqTopicAccordion")
+    if topic_root:
+        nested_topic_faqs = _parse_nested_topic_accordion(topic_root)
+        if nested_topic_faqs:
+            if include_group:
+                return nested_topic_faqs
+            return [(q, a) for _group, q, a in nested_topic_faqs]
+
     # Format 2: Bootstrap 5 accordion
     items = soup.select(".accordion-item")
     if debug:
@@ -245,6 +348,19 @@ def scrape_faqs(
 
         if li_faqs:
             faqs.extend(li_faqs)
+            continue
+
+        strong_block_faqs = _parse_strong_question_blocks(a_body)
+        if strong_block_faqs:
+            for q, a in strong_block_faqs:
+                key = (group_title, q, a)
+                if key in seen_pairs:
+                    continue
+                seen_pairs.add(key)
+                if include_group:
+                    faqs.append((group_title, q, a))
+                else:
+                    faqs.append((q, a))
             continue
 
         # Subformat normal: una pregunta al botó i una resposta al body

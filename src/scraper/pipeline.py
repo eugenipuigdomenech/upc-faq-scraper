@@ -4,22 +4,22 @@ import os
 import re
 import unicodedata
 from collections import Counter
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 try:
     from .constants import SHEETS_COLUMNS
-    from .html_export import approved_rows_to_html, filter_approved, render_upc_faqaccordion
+    from .html_export import filter_approved, render_upc_faqaccordion
     from .scraping import build_outputs
     from .sheets import export_rows_to_google_sheets_oauth, read_rows_from_sheets_oauth
 except ImportError:
     from constants import SHEETS_COLUMNS
-    from html_export import approved_rows_to_html, filter_approved, render_upc_faqaccordion
+    from html_export import filter_approved, render_upc_faqaccordion
     from scraping import build_outputs
     from sheets import export_rows_to_google_sheets_oauth, read_rows_from_sheets_oauth
 
 
-def read_sources_csv(path: str) -> List[Tuple[str, str]]:
-    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+def read_sources_csv(path: str) -> list[tuple[str, str]]:
+    with open(path, encoding="utf-8-sig", newline="") as f:
         sample = f.read(4096)
         f.seek(0)
 
@@ -34,9 +34,9 @@ def read_sources_csv(path: str) -> List[Tuple[str, str]]:
         except Exception:
             has_header = False
 
-        def parse_with_header() -> List[Tuple[str, str]]:
+        def parse_with_header() -> list[tuple[str, str]]:
             reader = csv.DictReader(f, dialect=dialect)
-            out_local: List[Tuple[str, str]] = []
+            out_local: list[tuple[str, str]] = []
             for r in reader:
                 url = (r.get("URL") or r.get("url") or r.get("Url") or r.get("link") or "").strip()
                 topic = (r.get("topic") or r.get("Topic") or r.get("tema") or r.get("Tema") or "").strip()
@@ -44,9 +44,9 @@ def read_sources_csv(path: str) -> List[Tuple[str, str]]:
                     out_local.append((url, topic))
             return out_local
 
-        def parse_without_header() -> List[Tuple[str, str]]:
+        def parse_without_header() -> list[tuple[str, str]]:
             reader = csv.reader(f, dialect=dialect)
-            out_local: List[Tuple[str, str]] = []
+            out_local: list[tuple[str, str]] = []
             for row in reader:
                 if not row:
                     continue
@@ -71,8 +71,8 @@ def read_sources_csv(path: str) -> List[Tuple[str, str]]:
         return out
 
 
-def read_rows_from_csv_like_sheets(path: str) -> List[Dict[str, str]]:
-    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+def read_rows_from_csv_like_sheets(path: str) -> list[dict[str, str]]:
+    with open(path, encoding="utf-8-sig", newline="") as f:
         sample = f.read(4096)
         f.seek(0)
         try:
@@ -82,20 +82,20 @@ def read_rows_from_csv_like_sheets(path: str) -> List[Dict[str, str]]:
             dialect.delimiter = ";"
 
         reader = csv.DictReader(f, dialect=dialect)
-        rows: List[Dict[str, str]] = []
+        rows: list[dict[str, str]] = []
         for r in reader:
             rows.append({(k or "").strip(): (v or "").strip() for k, v in r.items() if k})
         return rows
 
 
-def export_like_sheets_csv(rows: List[List[str]], output_path: str):
+def export_like_sheets_csv(rows: list[list[str]], output_path: str):
     with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, delimiter=";")
         w.writerow(SHEETS_COLUMNS)
         w.writerows(rows)
 
 
-def export_genweb_json(blocks: List[Dict[str, Any]], output_path: str):
+def export_genweb_json(blocks: list[dict[str, Any]], output_path: str):
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(blocks, f, ensure_ascii=False, indent=2)
 
@@ -110,7 +110,7 @@ def _normalize_for_compare(value: str) -> str:
     return txt
 
 
-def _get_row_value_case_insensitive(row: Dict[str, str], wanted_key: str) -> str:
+def _get_row_value_case_insensitive(row: dict[str, str], wanted_key: str) -> str:
     wanted = _normalize_for_compare(wanted_key)
     aliases = {wanted}
     if wanted == _normalize_for_compare("Subtopic"):
@@ -136,7 +136,7 @@ def _normalize_subtopic_value(value: str) -> str:
     return text
 
 
-def _log_grouping_diagnostics(rows: List[Dict[str, str]], approved_rows: List[Dict[str, str]], log=None):
+def _log_grouping_diagnostics(rows: list[dict[str, str]], approved_rows: list[dict[str, str]], log=None):
     def _log(m: str):
         if log:
             log(m)
@@ -180,7 +180,7 @@ def _log_grouping_diagnostics(rows: List[Dict[str, str]], approved_rows: List[Di
         _log(f"Diagnòstic HTML: temes aprovats detectats -> {preview}")
 
 
-def _build_grouping_diagnostics(rows: List[Dict[str, str]], approved_rows: List[Dict[str, str]]) -> Dict[str, object]:
+def _build_grouping_diagnostics(rows: list[dict[str, str]], approved_rows: list[dict[str, str]]) -> dict[str, object]:
     header_keys = [k for k in (rows[0].keys() if rows else []) if (k or "").strip()]
     subtopics = [
         _normalize_subtopic_value(_get_row_value_case_insensitive(r, "Subtopic"))
@@ -202,8 +202,8 @@ def _build_grouping_diagnostics(rows: List[Dict[str, str]], approved_rows: List[
     }
 
 
-def _validate_approved_subtopics(approved_rows: List[Dict[str, str]], row_numbers: Dict[int, int]) -> List[str]:
-    errors: List[str] = []
+def _validate_approved_subtopics(approved_rows: list[dict[str, str]], row_numbers: dict[int, int]) -> list[str]:
+    errors: list[str] = []
     for row in approved_rows:
         row_num = row_numbers.get(id(row), 0)
         label = f"Fila {row_num}" if row_num else "Fila desconeguda"
@@ -214,7 +214,7 @@ def _validate_approved_subtopics(approved_rows: List[Dict[str, str]], row_number
     return errors
 
 
-def _filter_approved_rows_for_render(approved_rows: List[Dict[str, str]], log=None) -> List[Dict[str, str]]:
+def _filter_approved_rows_for_render(approved_rows: list[dict[str, str]], log=None) -> list[dict[str, str]]:
     def _log(m: str):
         if log:
             log(m)
@@ -241,10 +241,10 @@ def _filter_approved_rows_for_render(approved_rows: List[Dict[str, str]], log=No
 
 
 def _filter_approved_rows_by_context_topic(
-    approved_rows: List[Dict[str, str]],
-    context_labels: List[str] | None = None,
+    approved_rows: list[dict[str, str]],
+    context_labels: list[str] | None = None,
     log=None,
-) -> List[Dict[str, str]]:
+) -> list[dict[str, str]]:
     def _log(m: str):
         if log:
             log(m)
@@ -260,7 +260,7 @@ def _filter_approved_rows_by_context_topic(
     if has_any_subtopic:
         return rows
 
-    topics: List[str] = []
+    topics: list[str] = []
     for row in rows:
         topic = (_get_row_value_case_insensitive(row, "Tema") or "").strip()
         if topic and topic not in topics:
@@ -307,12 +307,12 @@ def _filter_approved_rows_by_context_topic(
 def run_pipeline(
     input_mode: str,
     output_mode: str,
-    sources_csv_path: Optional[str] = None,
-    sources: Optional[List[Tuple[str, str]]] = None,
-    output_file_path: Optional[str] = None,
-    output_sheet_title: Optional[str] = None,
-    output_sheet_tab: Optional[str] = None,
-    output_sheet_id: Optional[str] = None,
+    sources_csv_path: str | None = None,
+    sources: list[tuple[str, str]] | None = None,
+    output_file_path: str | None = None,
+    output_sheet_title: str | None = None,
+    output_sheet_tab: str | None = None,
+    output_sheet_id: str | None = None,
     create_output_sheet_if_missing: bool = False,
     oauth_client_json: str = "oauth_client.json",
     token_file: str = "token.json",
@@ -384,15 +384,15 @@ def run_pipeline(
 
 def run_approved_to_html_pipeline(
     input_mode: str,
-    input_csv_path: Optional[str] = None,
-    sheet_title: Optional[str] = None,
-    sheet_tab: Optional[str] = None,
-    sheet_id: Optional[str] = None,
+    input_csv_path: str | None = None,
+    sheet_title: str | None = None,
+    sheet_tab: str | None = None,
+    sheet_id: str | None = None,
     oauth_client_json: str = "oauth_client.json",
     token_file: str = "token.json",
     output_path: str = "faqs_aprovades.txt",
     log=None,
-) -> Dict[str, int]:
+) -> dict[str, Any]:
     def _log(m: str):
         if log:
             log(m)

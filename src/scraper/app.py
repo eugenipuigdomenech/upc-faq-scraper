@@ -1,21 +1,21 @@
 ﻿# IMPORTS
+import base64
+import hashlib
+import json
 import os
+import re
 import sys
 import threading
 import time
-import webbrowser
-import json
-import re
 import unicodedata
-import io
-import base64
+import webbrowser
+from tkinter import font as tkfont
+from tkinter import messagebox
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+
 import customtkinter as ctk
-from tkinter import messagebox, font as tkfont
-from PIL import Image, ImageDraw
-import hashlib
 from bs4 import BeautifulSoup, NavigableString
+from PIL import Image
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 if MODULE_DIR not in sys.path:
@@ -29,38 +29,98 @@ try:
     from scraper.models import FaqItem
     from scraper.settings import (
         BG,
-        FAQ_FORMAT_HELP_TEXT,
+        BORDER,
+        DANGER,
+        DANGER_BG,
+        DANGER_BORDER,
+        DANGER_HOVER,
+        DANGER_TEXT,
+        INFO_PANEL,
+        INPUT_BG,
         LIGHT_PANEL,
+        LINK,
+        PLACEHOLDER,
+        SCROLLBAR,
+        SCROLLBAR_HOVER,
+        STATUS_NEUTRAL,
+        SUCCESS,
+        SUCCESS_BG,
+        SUCCESS_BORDER,
+        SUCCESS_HOVER,
+        SUCCESS_TEXT,
+        SURFACE,
+        SURFACE_SUBTLE,
+        TEXT_MUTED,
+        TEXT_PRIMARY,
         TOPICS_UI,
         UPC_BLUE,
         UPC_BLUE_TAB,
     )
-    from scraper.ui.widgets import file_row, help_icon, text_row
 except ImportError:
     try:
         from . import core
         from .models import FaqItem
         from .settings import (
             BG,
-            FAQ_FORMAT_HELP_TEXT,
+            BORDER,
+            DANGER,
+            DANGER_BG,
+            DANGER_BORDER,
+            DANGER_HOVER,
+            DANGER_TEXT,
+            INFO_PANEL,
+            INPUT_BG,
             LIGHT_PANEL,
+            LINK,
+            PLACEHOLDER,
+            SCROLLBAR,
+            SCROLLBAR_HOVER,
+            STATUS_NEUTRAL,
+            SUCCESS,
+            SUCCESS_BG,
+            SUCCESS_BORDER,
+            SUCCESS_HOVER,
+            SUCCESS_TEXT,
+            SURFACE,
+            SURFACE_SUBTLE,
+            TEXT_MUTED,
+            TEXT_PRIMARY,
             TOPICS_UI,
             UPC_BLUE,
             UPC_BLUE_TAB,
         )
-        from .ui.widgets import file_row, help_icon, text_row
     except ImportError:
         import core
         from models import FaqItem
         from settings import (
             BG,
-            FAQ_FORMAT_HELP_TEXT,
+            BORDER,
+            DANGER,
+            DANGER_BG,
+            DANGER_BORDER,
+            DANGER_HOVER,
+            DANGER_TEXT,
+            INFO_PANEL,
+            INPUT_BG,
             LIGHT_PANEL,
+            LINK,
+            PLACEHOLDER,
+            SCROLLBAR,
+            SCROLLBAR_HOVER,
+            STATUS_NEUTRAL,
+            SUCCESS,
+            SUCCESS_BG,
+            SUCCESS_BORDER,
+            SUCCESS_HOVER,
+            SUCCESS_TEXT,
+            SURFACE,
+            SURFACE_SUBTLE,
+            TEXT_MUTED,
+            TEXT_PRIMARY,
             TOPICS_UI,
             UPC_BLUE,
             UPC_BLUE_TAB,
         )
-        from ui.widgets import file_row, help_icon, text_row
 
 ctk.set_appearance_mode("light")
 
@@ -158,6 +218,21 @@ def resource_path(relative_path: str) -> str:
         # Project root from this file (src/scraper/app.py -> project root)
         base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     return os.path.join(base_path, relative_path)
+
+
+def runtime_base_dir() -> str:
+    """Directori base on l'usuari espera trobar fitxers externs quan executa l'app."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.getcwd()
+
+
+def first_existing_path(*candidates: str) -> str:
+    for candidate in candidates:
+        path = (candidate or "").strip()
+        if path and os.path.exists(path):
+            return path
+    return ""
     # Windows taskbar icon (optional)
 try:
     import ctypes
@@ -196,13 +271,20 @@ class App(ctk.CTk):
         self._card_inner_pady = 14
         self._form_row_gap = 8
         self._panel_content_width = 720
-        self._surface_color = "#D9E3E8"
-        self._surface_border = "#8FB7C8"
-        self._subtle_panel = "#C8D6DD"
+        self._surface_color = SURFACE
+        self._surface_border = BORDER
+        self._subtle_panel = SURFACE_SUBTLE
+        self._text_color = TEXT_PRIMARY
+        self._muted_text_color = TEXT_MUTED
+        self._input_bg_color = INPUT_BG
+        self._placeholder_color = PLACEHOLDER
+        self._scrollbar_color = SCROLLBAR
+        self._scrollbar_hover_color = SCROLLBAR_HOVER
         self._content_max_width = 960
         self._centered_content_areas = []
         self._home_shadow_job = None
         self._restoring_visible_section = False
+        self._last_configured_size = None
 
         # Fix icona barra de tasques Windows (més fiable a l'EXE)
         if ctypes:
@@ -262,26 +344,24 @@ class App(ctk.CTk):
         self.html_sheet_target_mode.trace_add("write", lambda *_: self._schedule_save_ui_state())
 
         # OAuth files (Sheets)
+        runtime_dir = runtime_base_dir()
         oauth_candidates = [
-            resource_path("tests/oauth_client.json"),
+            os.path.join(runtime_dir, "oauth_client.json"),
+            os.path.join(os.getcwd(), "oauth_client.json"),
             resource_path("oauth_client.json"),
+            os.path.join(runtime_dir, "tests", "oauth_client.json"),
             os.path.join(os.getcwd(), "tests", "oauth_client.json"),
+            resource_path("tests/oauth_client.json"),
         ]
-        self._default_oauth_client_json = next(
-            (p for p in oauth_candidates if os.path.exists(p)),
-            oauth_candidates[0],
-        )
+        self._default_oauth_client_json = first_existing_path(*oauth_candidates) or oauth_candidates[0]
         self._default_token_file = "token.json"
         self.oauth_client_json = ctk.StringVar(value=self._default_oauth_client_json)
         self.token_file = ctk.StringVar(value=self._default_token_file)
         self.google_auth_status = ctk.StringVar(value="")
         self._google_auth_in_progress = False
-        self._google_profile_image = None
-        self._google_profile_image_token = ""
         self._google_profile_name = ""
         self._google_profile_email = ""
-        self.google_session_name = ctk.StringVar(value="")
-        self.google_session_email = ctk.StringVar(value="")
+        self.google_session_summary = ctk.StringVar(value="")
         self._is_home_visible = True
         self.oauth_client_json.trace_add("write", lambda *_: self._schedule_save_ui_state())
         self.token_file.trace_add("write", lambda *_: self._schedule_save_ui_state())
@@ -289,7 +369,6 @@ class App(ctk.CTk):
         # ---------- Layout ----------
         self._build_header()
         self._build_body()
-        self._schedule_home_shadow_refresh()
         self._refresh_ui()
         self._restore_ui_state()
         self.bind("<Configure>", self._on_window_configure)
@@ -304,24 +383,6 @@ class App(ctk.CTk):
             # Fallback discret per si falta l'asset.
             img = Image.new("RGBA", size, (0, 0, 0, 0))
             return ctk.CTkImage(light_image=img, size=size)
-
-    def _create_avatar_ctk_image(self, pil_img: Image.Image | None, size: int = 104):
-        size = max(24, int(size))
-        try:
-            if pil_img is None:
-                pil_img = Image.open(resource_path("assets/Google_logo.png")).convert("RGBA")
-            else:
-                pil_img = pil_img.convert("RGBA")
-            pil_img = pil_img.resize((size, size), Image.LANCZOS)
-            mask = Image.new("L", (size, size), 0)
-            draw = ImageDraw.Draw(mask)
-            draw.ellipse((0, 0, size - 1, size - 1), fill=255)
-            avatar = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-            avatar.paste(pil_img, (0, 0), mask)
-            return ctk.CTkImage(light_image=avatar, size=(size, size))
-        except Exception:
-            fallback = Image.new("RGBA", (size, size), (217, 227, 232, 255))
-            return ctk.CTkImage(light_image=fallback, size=(size, size))
 
     def _create_upc_logo_image(self, target_h: int):
         target_h = max(1, int(target_h))
@@ -359,17 +420,17 @@ class App(ctk.CTk):
         wrap.grid(row=row, column=0, padx=padx, pady=(0, 0))
         tag = ctk.CTkFrame(
             wrap,
-            fg_color="#C8D6DD",
+            fg_color=self._surface_color,
             corner_radius=12,
             border_width=1,
-            border_color="#8FB7C8",
+            border_color=self._surface_border,
         )
         tag.pack(side="left")
         ctk.CTkLabel(
             tag,
             text=text,
             font=self._section_tag_font,
-            text_color=UPC_BLUE,
+            text_color=self._text_color,
         ).pack(padx=18, pady=(8, 8))
         return wrap
 
@@ -443,7 +504,7 @@ class App(ctk.CTk):
     # ====Build UI
     # CONSTRUCCIO UI
     def _build_header(self):
-        self.header = ctk.CTkFrame(self, fg_color="#C8D6DD", corner_radius=0, height=78)
+        self.header = ctk.CTkFrame(self, fg_color=self._subtle_panel, corner_radius=0, height=78)
         self.header.pack(fill="x")
         self.header.pack_propagate(False)
         self.header.grid_columnconfigure(0, weight=0)
@@ -463,11 +524,11 @@ class App(ctk.CTk):
             corner_radius=16,
             font=ctk.CTkFont(size=15, weight="bold"),
             command=self._show_home,
-            fg_color="#D9E3E8",
-            hover_color="#C8D6DD",
-            text_color="#1C2B34",
+            fg_color=self._surface_color,
+            hover_color=self._subtle_panel,
+            text_color=self._text_color,
             border_width=1,
-            border_color="#8FB7C8",
+            border_color=self._surface_border,
         )
         self.home_nav_btn._keep_custom_color = True
         self.home_nav_btn.grid(row=0, column=0, sticky="w", padx=(20, 10), pady=8)
@@ -481,11 +542,11 @@ class App(ctk.CTk):
             corner_radius=16,
             font=ctk.CTkFont(size=15, weight="bold"),
             command=self._go_to_other_workspace_tab,
-            fg_color="#D9E3E8",
-            hover_color="#C8D6DD",
-            text_color="#1C2B34",
+            fg_color=self._surface_color,
+            hover_color=self._subtle_panel,
+            text_color=self._text_color,
             border_width=1,
-            border_color="#8FB7C8",
+            border_color=self._surface_border,
         )
         self.tab_switch_btn._keep_custom_color = True
         self.tab_switch_btn.grid(row=0, column=1, sticky="w", padx=(0, 10), pady=8)
@@ -502,13 +563,13 @@ class App(ctk.CTk):
     def _build_body(self):
         body = ctk.CTkFrame(self, fg_color=BG)
         self.body = body
-        body.pack(fill="both", expand=True, padx=22, pady=(16, 20))
+        body.pack(fill="both", expand=True, padx=22, pady=(0, 0))
 
         body.grid_columnconfigure(0, weight=1)
         body.grid_rowconfigure(0, weight=1)
 
         self.home_frame = ctk.CTkFrame(body, fg_color="transparent")
-        self.home_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        self.home_frame.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
         self.home_frame.grid_columnconfigure(0, weight=1)
         self.home_frame.grid_rowconfigure(0, weight=1)  # espai superior flexible
         self.home_frame.grid_rowconfigure(1, weight=0)  # titol
@@ -522,10 +583,10 @@ class App(ctk.CTk):
         home_title_wrap.grid(row=1, column=0, sticky="n")
         home_title_tag = ctk.CTkFrame(
             home_title_wrap,
-            fg_color="#D9E3E8",
+            fg_color=self._surface_color,
             corner_radius=6,
             border_width=1,
-            border_color="#8FB7C8",
+            border_color=self._surface_border,
         )
         home_title_tag.pack()
         self.home_title_logo_icon = self._create_home_action_icon("assets/faqs1_logo.png", size=(52, 52))
@@ -535,7 +596,7 @@ class App(ctk.CTk):
             image=self.home_title_logo_icon,
             compound="left",
             font=ctk.CTkFont(size=30, weight="normal"),
-            text_color="#1C2B34",
+            text_color=self._text_color,
         ).pack(padx=22, pady=(10, 10))
 
         home_card = ctk.CTkFrame(self.home_frame, fg_color="transparent")
@@ -550,10 +611,10 @@ class App(ctk.CTk):
         self.home_download_wrap.grid(row=0, column=0, padx=(16, 16), pady=(12, 12), sticky="nsew")
         self.home_download_wrap.grid_propagate(False)
         self.home_download_shadow_soft = ctk.CTkFrame(
-            self.home_download_wrap, fg_color="#C8D6DD", corner_radius=8, width=382, height=322
+            self.home_download_wrap, fg_color=self._subtle_panel, corner_radius=8, width=382, height=322
         )
         self.home_download_shadow = ctk.CTkFrame(
-            self.home_download_wrap, fg_color="#8FB7C8", corner_radius=9, width=384, height=324
+            self.home_download_wrap, fg_color=self._surface_border, corner_radius=9, width=384, height=324
         )
 
         self.home_download_btn = ctk.CTkButton(
@@ -566,11 +627,11 @@ class App(ctk.CTk):
             corner_radius=6,
             font=ctk.CTkFont(size=30, weight="normal"),
             command=self._open_section_download,
-            fg_color="#D9E3E8",
-            hover_color="#D9E3E8",
-            text_color="#1C2B34",
+            fg_color=self._surface_color,
+            hover_color=self._surface_color,
+            text_color=self._text_color,
             border_width=1,
-            border_color="#8FB7C8",
+            border_color=self._surface_border,
         )
         self.home_download_btn.place(x=0, y=0)
         self._bind_home_card_shadow(
@@ -583,10 +644,10 @@ class App(ctk.CTk):
         self.home_export_wrap.grid(row=0, column=1, padx=(16, 16), pady=(12, 12), sticky="nsew")
         self.home_export_wrap.grid_propagate(False)
         self.home_export_shadow_soft = ctk.CTkFrame(
-            self.home_export_wrap, fg_color="#C8D6DD", corner_radius=8, width=382, height=322
+            self.home_export_wrap, fg_color=self._subtle_panel, corner_radius=8, width=382, height=322
         )
         self.home_export_shadow = ctk.CTkFrame(
-            self.home_export_wrap, fg_color="#8FB7C8", corner_radius=9, width=384, height=324
+            self.home_export_wrap, fg_color=self._surface_border, corner_radius=9, width=384, height=324
         )
         self.home_export_btn = ctk.CTkButton(
             self.home_export_wrap,
@@ -598,11 +659,11 @@ class App(ctk.CTk):
             corner_radius=6,
             font=ctk.CTkFont(size=30, weight="normal"),
             command=self._open_section_export,
-            fg_color="#D9E3E8",
-            hover_color="#D9E3E8",
-            text_color="#1C2B34",
+            fg_color=self._surface_color,
+            hover_color=self._surface_color,
+            text_color=self._text_color,
             border_width=1,
-            border_color="#8FB7C8",
+            border_color=self._surface_border,
         )
         self.home_export_btn.place(x=0, y=0)
         self._bind_home_card_shadow(
@@ -626,14 +687,14 @@ class App(ctk.CTk):
                 "Eina desenvolupada en el marc del projecte Genweb de la Universitat "
                 "Politecnica de Catalunya (UPC) per a la gestio i publicacio de continguts FAQ."
             ),
-            text_color="#365C6B",
+            text_color=self._muted_text_color,
             font=ctk.CTkFont(size=11),
             justify="left",
             anchor="w",
         ).grid(row=0, column=1, sticky="w")
 
         self.workspace_frame = ctk.CTkFrame(body, fg_color="transparent")
-        self.workspace_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=0)
+        self.workspace_frame.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
         self.workspace_frame.grid_columnconfigure(0, weight=1)
         self.workspace_frame.grid_rowconfigure(0, weight=1)
         self.workspace_frame.grid_remove()
@@ -667,8 +728,8 @@ class App(ctk.CTk):
         self.tab_scrape_scroll = ctk.CTkScrollableFrame(
             tab_scrape,
             fg_color="transparent",
-            scrollbar_button_color="#9FB6D3",
-            scrollbar_button_hover_color="#7EA2CC",
+            scrollbar_button_color=self._scrollbar_color,
+            scrollbar_button_hover_color=self._scrollbar_hover_color,
         )
         self.tab_scrape_scroll.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
         self.tab_scrape_scroll.grid_columnconfigure(0, weight=1)
@@ -761,124 +822,83 @@ class App(ctk.CTk):
             pady=(self._card_inner_pady, 12),
         )
 
-        ctk.CTkLabel(
-            out_mode_frame,
-            text="Google Sheets",
-            font=self._field_label_font,
-            text_color="#1C2B34",
-        ).pack(anchor="w")
 
         self.google_logo_image = self._create_google_logo_image()
-        self.google_avatar_large_image = self._create_avatar_ctk_image(None, size=104)
         self.google_session_card_1 = ctk.CTkFrame(
             out_mode_frame,
-            fg_color="#F8FBFF",
-            corner_radius=16,
+            fg_color=self._surface_color,
+            corner_radius=10,
             border_width=1,
-            border_color="#C9DAF2",
+            border_color=self._surface_border,
         )
-        self.google_session_card_1.pack(anchor="w", pady=(10, 0), fill="x")
+        self.google_session_card_1.pack(anchor="center", pady=(10, 0))
         self.google_session_card_1.pack_forget()
-        self.google_session_card_1.grid_columnconfigure(0, weight=1)
+        self.google_session_card_1.grid_columnconfigure(0, weight=0)
+        self.google_session_card_1.grid_columnconfigure(1, weight=0)
 
-        self.google_session_avatar_1 = ctk.CTkLabel(
+        self.google_session_info_label_1 = ctk.CTkLabel(
             self.google_session_card_1,
-            text="",
-            image=self.google_avatar_large_image,
-        )
-        self.google_session_avatar_1.grid(row=0, column=0, pady=(18, 8), padx=24)
-        self.google_session_name_label_1 = ctk.CTkLabel(
-            self.google_session_card_1,
-            textvariable=self.google_session_name,
-            font=ctk.CTkFont(size=19, weight="bold"),
-            text_color="#0F172A",
-            anchor="center",
-            justify="center",
-        )
-        self.google_session_name_label_1.grid(row=1, column=0, padx=24, pady=(0, 4))
-        self.google_session_email_label_1 = ctk.CTkLabel(
-            self.google_session_card_1,
-            textvariable=self.google_session_email,
-            font=ctk.CTkFont(size=14),
-            text_color="#475569",
-            anchor="center",
-            justify="center",
-        )
-        self.google_session_email_label_1.grid(row=2, column=0, padx=24, pady=(0, 14))
-        self.google_session_actions_1 = ctk.CTkFrame(self.google_session_card_1, fg_color="transparent")
-        self.google_session_actions_1.grid(row=3, column=0, pady=(0, 18))
-        self.google_connected_badge_1 = ctk.CTkButton(
-            self.google_session_actions_1,
-            text="CONNECTAT",
-            width=140,
-            height=42,
-            state="disabled",
+            textvariable=self.google_session_summary,
             font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color="#DDF6E7",
-            text_color="#0E7A45",
-            hover=False,
-            border_width=0,
+            text_color=self._text_color,
+            anchor="w",
+            justify="left",
+            image=self.google_logo_image,
+            compound="left",
         )
-        self.google_connected_badge_1.pack(side="left", padx=(0, 12))
+        self.google_session_info_label_1.grid(row=0, column=0, padx=(16, 12), pady=14, sticky="w")
         self.google_logout_btn_1 = ctk.CTkButton(
-            self.google_session_actions_1,
-            text="Tancar sessio",
+            self.google_session_card_1,
+            text="Tancar sessió",
             command=self.google_logout_clicked,
-            width=160,
-            height=42,
+            width=136,
+            height=38,
             font=self._action_btn_font,
-            fg_color="#FFFFFF",
-            hover_color="#F3F4F6",
-            text_color="#1F2937",
+            fg_color=self._surface_color,
+            hover_color=self._subtle_panel,
+            text_color=self._text_color,
             border_width=1,
-            border_color="#CBD5E1",
+            border_color=self._surface_border,
+            corner_radius=10,
         )
-        self.google_logout_btn_1.pack(side="left")
+        self.google_logout_btn_1.grid(row=0, column=1, padx=(0, 14), pady=10)
 
-        # Sheets rows
-        self.out_sheets_row = ctk.CTkFrame(self.out_card, fg_color="transparent")
-        self.out_sheets_row.grid(
-            row=3,
-            column=1,
-            padx=self._card_inner_padx,
-            pady=(0, 12),
-        )
-        self.out_sheets_row.grid_columnconfigure(0, weight=0)
-        self.out_sheets_row.grid_columnconfigure(1, weight=0)
-        self.sheets_login_prompt_row = ctk.CTkFrame(self.out_sheets_row, fg_color="transparent")
-        self.sheets_login_prompt_row.grid(row=0, column=0, columnspan=2, padx=6, pady=(0, 12))
         self.google_login_btn_1 = ctk.CTkButton(
-            self.sheets_login_prompt_row,
+            out_mode_frame,
             text="Iniciar sessió amb Google",
             command=self.google_login_clicked,
             width=230,
             height=46,
             font=self._action_btn_font,
             image=self.google_logo_image,
-            fg_color="#D9E3E8",
-            hover_color="#C8D6DD",
-            text_color="#1C2B34",
+            fg_color=self._surface_color,
+            hover_color=self._subtle_panel,
+            text_color=self._text_color,
             border_width=1,
-            border_color="#8FB7C8",
+            border_color=self._surface_border,
             corner_radius=10,
         )
-        self.google_login_btn_1.pack(side="left")
+        self.google_login_btn_1.pack(anchor="w", pady=(10, 0))
 
-        ctk.CTkLabel(
-            self.out_sheets_row,
-            text="Selecciona o crea el Google Sheets",
-            font=self._field_label_font,
-            text_color="#1C2B34",
-        ).grid(row=1, column=0, columnspan=2, padx=6, pady=(0, 10))
+        # Sheets rows
+        self.out_sheets_row = ctk.CTkFrame(self.out_card, fg_color="transparent")
+        self.out_sheets_row.grid(
+            row=1,
+            column=1,
+            padx=self._card_inner_padx,
+            pady=(0, 12),
+        )
+        self.out_sheets_row.grid_columnconfigure(0, weight=0)
+        self.out_sheets_row.grid_columnconfigure(1, weight=0)
 
         self.sheet_target_panel = ctk.CTkFrame(
             self.out_sheets_row,
             fg_color=self._subtle_panel,
             corner_radius=14,
             border_width=1,
-            border_color="#E0EAF5",
+            border_color=self._surface_border,
         )
-        self.sheet_target_panel.grid(row=2, column=0, columnspan=2, padx=6, pady=(0, 4))
+        self.sheet_target_panel.grid(row=0, column=0, columnspan=2, padx=6, pady=(0, 4))
         self.sheet_target_panel.grid_columnconfigure(0, weight=1)
 
         self.sheet_browse_wrap = ctk.CTkFrame(self.sheet_target_panel, fg_color="transparent")
@@ -905,27 +925,27 @@ class App(ctk.CTk):
         self.sheet_new_wrap = ctk.CTkFrame(self.sheet_target_panel, fg_color="transparent")
         self.sheet_new_wrap.grid(row=1, column=0, padx=12, pady=(0, 12), sticky="ew")
         self.sheet_new_wrap.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(self.sheet_new_wrap, text="Títol del nou Google Sheet", font=self._eyebrow_font, text_color="#5B6B80").grid(
+        ctk.CTkLabel(self.sheet_new_wrap, text="Títol del nou Google Sheet", font=self._eyebrow_font, text_color=self._muted_text_color).grid(
             row=0, column=0, padx=(4, 10), pady=(0, 6), sticky="w"
         )
         self.output_sheet_title_entry = ctk.CTkEntry(
             self.sheet_new_wrap,
             textvariable=self.output_sheet_title,
             placeholder_text="Nom del nou Google Sheet",
-            placeholder_text_color="#6B7280",
+            placeholder_text_color=self._placeholder_color,
             font=self._input_italic_font,
             width=self._compact_form_width,
             height=34,
         )
         self.output_sheet_title_entry.grid(row=0, column=1, padx=(0, 6), pady=(0, 6), sticky="w")
-        ctk.CTkLabel(self.sheet_new_wrap, text="Pestanya on es desarà", font=self._eyebrow_font, text_color="#5B6B80").grid(
+        ctk.CTkLabel(self.sheet_new_wrap, text="Pestanya on es desarà", font=self._eyebrow_font, text_color=self._muted_text_color).grid(
             row=1, column=0, padx=(4, 10), pady=(0, 0), sticky="w"
         )
         self.output_sheet_tab_entry = ctk.CTkEntry(
             self.sheet_new_wrap,
             textvariable=self.output_sheet_tab,
             placeholder_text="Nom de la pestanya de destí",
-            placeholder_text_color="#6B7280",
+            placeholder_text_color=self._placeholder_color,
             font=self._input_italic_font,
             width=self._compact_form_width,
             height=34,
@@ -935,7 +955,7 @@ class App(ctk.CTk):
 
         self.google_auth_row = ctk.CTkFrame(self.out_card, fg_color="transparent")
         self.google_auth_row.grid(
-            row=4,
+            row=2,
             column=1,
             padx=self._card_inner_padx,
             pady=(0, 4),
@@ -946,15 +966,33 @@ class App(ctk.CTk):
             self.google_auth_row,
             textvariable=self.google_auth_status,
             font=self._body_font,
-            text_color="#334155",
+            text_color=self._muted_text_color,
             anchor="w",
             justify="left",
         )
         self.google_auth_status_label_1.grid(row=0, column=0, padx=(12, 12), pady=(0, 0))
 
-        # --- Botó + progress + log (tab 1) ---
+        # --- Progress + botó + log (tab 1) ---
+        progress_wrap = ctk.CTkFrame(self.out_card, fg_color="transparent")
+        progress_wrap.grid(
+            row=3,
+            column=1,
+            padx=self._card_inner_padx,
+            pady=(6, 8),
+        )
+        progress_wrap.configure(width=self._panel_content_width)
+        progress_wrap.grid_columnconfigure(0, weight=1)
+        progress_wrap.grid_columnconfigure(1, weight=0)
+
+        self.progress = ctk.CTkProgressBar(progress_wrap, height=12)
+        self.progress.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+        self.progress.configure(progress_color=UPC_BLUE_TAB, fg_color=self._subtle_panel)
+        self.progress.set(0)
+        self.progress_status = ctk.CTkLabel(progress_wrap, text="0% · Preparat", font=self._body_font)
+        self.progress_status.grid(row=0, column=1, sticky="e")
+
         btns = ctk.CTkFrame(self.out_card, fg_color="transparent")
-        btns.grid(row=5, column=1, padx=self._card_inner_padx, pady=(6, 8))
+        btns.grid(row=4, column=1, padx=self._card_inner_padx, pady=(8, 10))
 
         self.run_btn = ctk.CTkButton(
             btns,
@@ -976,33 +1014,15 @@ class App(ctk.CTk):
         )
         self.log_toggle_btn.pack(side="left", padx=(10, 0))
 
-        progress_wrap = ctk.CTkFrame(self.out_card, fg_color="transparent")
-        progress_wrap.grid(
-            row=6,
-            column=1,
-            padx=self._card_inner_padx,
-            pady=(8, 10),
-        )
-        progress_wrap.configure(width=self._panel_content_width)
-        progress_wrap.grid_columnconfigure(0, weight=1)
-        progress_wrap.grid_columnconfigure(1, weight=0)
-
-        self.progress = ctk.CTkProgressBar(progress_wrap, height=12)
-        self.progress.grid(row=0, column=0, sticky="ew", padx=(0, 10))
-        self.progress.configure(progress_color="#005C86", fg_color="#C8D6DD")
-        self.progress.set(0)
-        self.progress_status = ctk.CTkLabel(progress_wrap, text="0% · Preparat", font=self._body_font)
-        self.progress_status.grid(row=0, column=1, sticky="e")
-
         # --- LOG card (gris) ---
         self.log_card = ctk.CTkFrame(
             self.out_card,
             fg_color=self._subtle_panel,
             corner_radius=12,
             border_width=1,
-            border_color="#8FB7C8",
+            border_color=self._surface_border,
         )
-        self.log_card.grid(row=8, column=1, sticky="ew", padx=8, pady=(0, 4))
+        self.log_card.grid(row=5, column=1, sticky="ew", padx=8, pady=(0, 4))
         self.log_card.configure(width=self._panel_content_width)
         self.log_card.configure(height=250)
         self.log_card.grid_propagate(False)
@@ -1012,11 +1032,11 @@ class App(ctk.CTk):
         self.log = ctk.CTkTextbox(
             self.log_card,
             corner_radius=10,
-            fg_color="#E7EEF2",
+            fg_color=self._input_bg_color,
             border_width=1,
-            border_color="#8FB7C8",
-            scrollbar_button_color="#6F9CAF",
-            scrollbar_button_hover_color="#365C6B",
+            border_color=self._surface_border,
+            scrollbar_button_color=self._scrollbar_color,
+            scrollbar_button_hover_color=self._scrollbar_hover_color,
         )
         self.log.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
         # Forcem estat inicial amagat.
@@ -1066,7 +1086,7 @@ class App(ctk.CTk):
             image=self.tab_export_title_icon,
             compound="left",
             font=self._page_title_font,
-            text_color="#1C2B34",
+            text_color=self._text_color,
         ).pack(padx=18, pady=(10, 10))
 
         self._create_folder_section_tag(
@@ -1081,13 +1101,6 @@ class App(ctk.CTk):
         mode_frame2 = ctk.CTkFrame(card2, fg_color="transparent")
         mode_frame2.grid(row=0, column=1, padx=self._card_inner_padx, pady=(self._card_inner_pady, 10))
 
-        ctk.CTkLabel(
-            mode_frame2,
-            text="Google Sheets",
-            font=self._field_label_font,
-            text_color="#1C2B34",
-        ).pack(anchor="w")
-
         self.google_login_btn_2 = ctk.CTkButton(
             mode_frame2,
             text="Iniciar sessió amb Google",
@@ -1096,78 +1109,52 @@ class App(ctk.CTk):
             height=46,
             font=self._action_btn_font,
             image=self.google_logo_image,
-            fg_color="#D9E3E8",
-            hover_color="#C8D6DD",
-            text_color="#1C2B34",
+            fg_color=self._surface_color,
+            hover_color=self._subtle_panel,
+            text_color=self._text_color,
             border_width=1,
-            border_color="#8FB7C8",
+            border_color=self._surface_border,
             corner_radius=10,
         )
 
         self.google_session_card_2 = ctk.CTkFrame(
             mode_frame2,
-            fg_color="#F8FBFF",
-            corner_radius=16,
+            fg_color=self._surface_color,
+            corner_radius=10,
             border_width=1,
-            border_color="#C9DAF2",
+            border_color=self._surface_border,
         )
-        self.google_session_card_2.pack(anchor="w", pady=(10, 0), fill="x")
+        self.google_session_card_2.pack(anchor="center", pady=(10, 0))
         self.google_session_card_2.pack_forget()
-        self.google_session_card_2.grid_columnconfigure(0, weight=1)
+        self.google_session_card_2.grid_columnconfigure(0, weight=0)
+        self.google_session_card_2.grid_columnconfigure(1, weight=0)
 
-        self.google_session_avatar_2 = ctk.CTkLabel(
+        self.google_session_info_label_2 = ctk.CTkLabel(
             self.google_session_card_2,
-            text="",
-            image=self.google_avatar_large_image,
-        )
-        self.google_session_avatar_2.grid(row=0, column=0, pady=(18, 8), padx=24)
-        self.google_session_name_label_2 = ctk.CTkLabel(
-            self.google_session_card_2,
-            textvariable=self.google_session_name,
-            font=ctk.CTkFont(size=19, weight="bold"),
-            text_color="#0F172A",
-            anchor="center",
-            justify="center",
-        )
-        self.google_session_name_label_2.grid(row=1, column=0, padx=24, pady=(0, 4))
-        self.google_session_email_label_2 = ctk.CTkLabel(
-            self.google_session_card_2,
-            textvariable=self.google_session_email,
-            font=ctk.CTkFont(size=14),
-            text_color="#475569",
-            anchor="center",
-            justify="center",
-        )
-        self.google_session_email_label_2.grid(row=2, column=0, padx=24, pady=(0, 14))
-        self.google_session_actions_2 = ctk.CTkFrame(self.google_session_card_2, fg_color="transparent")
-        self.google_session_actions_2.grid(row=3, column=0, pady=(0, 18))
-        self.google_connected_badge_2 = ctk.CTkButton(
-            self.google_session_actions_2,
-            text="CONNECTAT",
-            width=140,
-            height=42,
-            state="disabled",
+            textvariable=self.google_session_summary,
             font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color="#DDF6E7",
-            text_color="#0E7A45",
-            hover=False,
-            border_width=0,
+            text_color=self._text_color,
+            anchor="w",
+            justify="left",
+            image=self.google_logo_image,
+            compound="left",
         )
-        self.google_connected_badge_2.pack(side="left", padx=(0, 12))
+        self.google_session_info_label_2.grid(row=0, column=0, padx=(16, 12), pady=14, sticky="w")
         self.google_logout_btn_2 = ctk.CTkButton(
-            self.google_session_actions_2,
-            text="Tancar sessio",
+            self.google_session_card_2,
+            text="Tancar sessió",
             command=self.google_logout_clicked,
-            width=160,
-            height=42,
+            width=136,
+            height=38,
             font=self._action_btn_font,
-            fg_color="#FFFFFF",
-            hover_color="#F3F4F6",
-            text_color="#1F2937",
+            fg_color=self._surface_color,
+            hover_color=self._subtle_panel,
+            text_color=self._text_color,
             border_width=1,
-            border_color="#CBD5E1",
+            border_color=self._surface_border,
+            corner_radius=10,
         )
-        self.google_logout_btn_2.pack(side="left")
+        self.google_logout_btn_2.grid(row=0, column=1, padx=(0, 14), pady=10)
         self.google_login_btn_2.pack(anchor="w", pady=(10, 0))
 
         self.html_sheets_row = ctk.CTkFrame(card2, fg_color="transparent")
@@ -1175,19 +1162,12 @@ class App(ctk.CTk):
         self.html_sheets_row.grid_columnconfigure(0, weight=0)
         self.html_sheets_row.grid_columnconfigure(1, weight=0)
 
-        ctk.CTkLabel(
-            self.html_sheets_row,
-            text="Selecciona el Google Sheets",
-            font=self._field_label_font,
-            text_color="#0F172A",
-        ).grid(row=0, column=0, columnspan=2, padx=6, pady=(0, 10))
-
         self.html_sheet_target_panel = ctk.CTkFrame(
             self.html_sheets_row,
             fg_color=self._subtle_panel,
             corner_radius=14,
             border_width=1,
-            border_color="#E0EAF5",
+            border_color=self._surface_border,
         )
         self.html_sheet_target_panel.grid(row=1, column=0, columnspan=2, padx=6, pady=(0, 4))
         self.html_sheet_target_panel.grid_columnconfigure(0, weight=1)
@@ -1210,7 +1190,7 @@ class App(ctk.CTk):
         self.google_auth_status_label_2 = ctk.CTkLabel(
             self.html_google_auth_row,
             textvariable=self.google_auth_status,
-            text_color="#334155",
+            text_color=self._muted_text_color,
             anchor="w",
             justify="left",
         )
@@ -1246,7 +1226,7 @@ class App(ctk.CTk):
                 "'Afegeix > Contingut UPC'. Si vols actualitzar-lo després, ves a "
                 "'Edita > Codi font'."
             ),
-            text_color="#334155",
+            text_color=self._muted_text_color,
             justify="left",
             wraplength=700,
         ).pack(anchor="center", pady=(0, 6))
@@ -1273,10 +1253,10 @@ class App(ctk.CTk):
 
         self.code_card = ctk.CTkFrame(
             self.output_html_card,
-            fg_color="#E3ECF8",
+            fg_color=INFO_PANEL,
             corner_radius=12,
             border_width=1,
-            border_color="#D0DDEE",
+            border_color=self._surface_border,
         )
         self.code_card.grid(row=1, column=1, sticky="ew", padx=12, pady=(4, 4))
         self.code_card.configure(width=self._panel_content_width)
@@ -1287,11 +1267,11 @@ class App(ctk.CTk):
             self.code_card,
             height=170,
             corner_radius=10,
-            fg_color="#EEF3F6",
+            fg_color=self._input_bg_color,
             border_width=1,
-            border_color="#8FB7C8",
-            scrollbar_button_color="#6F9CAF",
-            scrollbar_button_hover_color="#365C6B",
+            border_color=self._surface_border,
+            scrollbar_button_color=self._scrollbar_color,
+            scrollbar_button_hover_color=self._scrollbar_hover_color,
         )
         self.log2.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
 
@@ -1368,9 +1348,17 @@ class App(ctk.CTk):
         configured = (self.oauth_client_json.get() or "").strip()
         if configured and os.path.exists(configured):
             return configured
-        if os.path.exists(self._default_oauth_client_json):
-            return self._default_oauth_client_json
-        return configured or self._default_oauth_client_json
+        runtime_dir = runtime_base_dir()
+        fallback = first_existing_path(
+            os.path.join(runtime_dir, "oauth_client.json"),
+            os.path.join(os.getcwd(), "oauth_client.json"),
+            self._default_oauth_client_json,
+            resource_path("oauth_client.json"),
+            os.path.join(runtime_dir, "tests", "oauth_client.json"),
+            os.path.join(os.getcwd(), "tests", "oauth_client.json"),
+            resource_path("tests/oauth_client.json"),
+        )
+        return fallback or configured or os.path.join(runtime_dir, "oauth_client.json")
 
     def _token_file_path(self) -> str:
         return (self.token_file.get() or "").strip() or self._default_token_file
@@ -1398,7 +1386,7 @@ class App(ctk.CTk):
         payload = parts[1]
         payload += "=" * (-len(payload) % 4)
         try:
-            raw = base64.urlsafe_b64decode(payload.encode("utf-8"))
+            raw = base64.urlsafe_b64decode(payload.encode())
             data = json.loads(raw.decode("utf-8"))
             return data if isinstance(data, dict) else {}
         except Exception:
@@ -1409,66 +1397,29 @@ class App(ctk.CTk):
         if not os.path.exists(token_path):
             self._google_profile_name = ""
             self._google_profile_email = ""
-            return None, "", ""
+            return "", ""
         try:
-            with open(token_path, "r", encoding="utf-8") as f:
+            with open(token_path, encoding="utf-8") as f:
                 token_data = json.load(f)
         except Exception:
             self._google_profile_name = ""
             self._google_profile_email = ""
-            return None, "", ""
-
-        access_token = (token_data.get("access_token") or "").strip()
-        if self._google_profile_image is not None and self._google_profile_image_token == access_token:
-            return self._google_profile_image, self._google_profile_name, self._google_profile_email
+            return "", ""
 
         fallback_name = ""
         fallback_email = ""
-        fallback_picture_url = ""
         id_token_data = self._decode_jwt_payload((token_data.get("id_token") or "").strip())
         if id_token_data:
             fallback_name = (id_token_data.get("name") or "").strip()
             fallback_email = (
                 (id_token_data.get("email") or "").strip()
             )
-            fallback_picture_url = (id_token_data.get("picture") or "").strip()
 
-        payload = {}
-        if access_token:
-            try:
-                req = Request(
-                    "https://www.googleapis.com/oauth2/v3/userinfo",
-                    headers={"Authorization": f"Bearer {access_token}"},
-                )
-                with urlopen(req, timeout=5) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
-            except Exception:
-                payload = {}
-
-        name = (payload.get("name") or "").strip() or fallback_name
-        email = (payload.get("email") or "").strip() or fallback_email
-        picture_url = (payload.get("picture") or "").strip() or fallback_picture_url
-        pil_img = None
-        if picture_url:
-            try:
-                img_req = Request(picture_url, headers={"User-Agent": "Mozilla/5.0"})
-                with urlopen(img_req, timeout=5) as img_response:
-                    raw = img_response.read()
-                pil_img = Image.open(io.BytesIO(raw)).convert("RGBA")
-            except Exception:
-                pil_img = None
-
-        image = self._create_avatar_ctk_image(pil_img, size=104)
-
-        self._google_profile_image = image
-        self._google_profile_image_token = access_token
+        name = fallback_name
+        email = fallback_email
         self._google_profile_name = name
         self._google_profile_email = email
-        return image, name, email
-
-    def _load_google_profile_image(self):
-        image, _name, _email = self._load_google_profile_data()
-        return image
+        return name, email
 
     def _refresh_home_nav_button_state(self):
         btn = getattr(self, "home_nav_btn", None)
@@ -1490,7 +1441,13 @@ class App(ctk.CTk):
             if header and not header.winfo_manager():
                 header.pack(fill="x", before=getattr(self, "body", None))
             btn.grid(row=0, column=0, sticky="w", padx=(20, 10), pady=8)
-            btn.configure(state="normal", fg_color="white", text_color=UPC_BLUE)
+            btn.configure(
+                state="normal",
+                fg_color=self._surface_color,
+                hover_color=self._subtle_panel,
+                text_color=self._text_color,
+                border_color=self._surface_border,
+            )
             if tab_switch_btn:
                 self._refresh_tab_switch_button()
                 tab_switch_btn.grid(row=0, column=1, sticky="w", padx=(0, 10), pady=8)
@@ -1527,22 +1484,12 @@ class App(ctk.CTk):
     def _update_google_action_buttons(self):
         session_active = self._is_google_session_available()
         in_progress = self._google_auth_in_progress
-        btn_image = self.google_logo_image
         profile_name = ""
         profile_email = ""
         if session_active:
-            profile_image, profile_name, profile_email = self._load_google_profile_data()
-            if profile_image is not None:
-                btn_image = profile_image
-        self.google_session_name.set(profile_name or "Sessio de Google activa")
-        self.google_session_email.set(profile_email or "")
-        for avatar_name in ("google_session_avatar_1", "google_session_avatar_2"):
-            avatar = getattr(self, avatar_name, None)
-            if avatar:
-                try:
-                    avatar.configure(image=btn_image)
-                except Exception:
-                    pass
+            profile_name, profile_email = self._load_google_profile_data()
+        session_summary = profile_email or profile_name or "Sessio de Google activa"
+        self.google_session_summary.set(session_summary)
         for btn_name in ("google_login_btn_1", "google_login_btn_2"):
             btn = getattr(self, btn_name, None)
             if not btn:
@@ -1552,10 +1499,10 @@ class App(ctk.CTk):
                     text="Iniciar sessió amb Google" if not in_progress else "Processant...",
                     command=self.google_login_clicked,
                     image=self.google_logo_image,
-                    fg_color="#D9E3E8",
-                    hover_color="#C8D6DD",
-                    text_color="#1C2B34",
-                    border_color="#8FB7C8",
+                    fg_color=self._surface_color,
+                    hover_color=self._subtle_panel,
+                    text_color=self._text_color,
+                    border_color=self._surface_border,
                 )
             except Exception:
                 pass
@@ -1580,7 +1527,7 @@ class App(ctk.CTk):
                 and mode_var.get() == mode_value
             )
             if visible and not row.winfo_manager():
-                row.pack(anchor="w", pady=(10, 0), fill="x")
+                row.pack(anchor="center", pady=(10, 0))
             elif not visible and row.winfo_manager():
                 row.pack_forget()
 
@@ -1602,11 +1549,11 @@ class App(ctk.CTk):
                 getattr(self, "home_export_btn", None),
             }
             btn.configure(
-                fg_color="#D9E3E8",
-                hover_color="#C8D6DD",
-                text_color="#1C2B34" if is_home_card else "#1C2B34",
+                fg_color=self._surface_color,
+                hover_color=self._subtle_panel,
+                text_color=self._text_color if is_home_card else self._text_color,
                 border_width=1,
-                border_color="#8FB7C8",
+                border_color=self._surface_border,
             )
         except Exception:
             pass
@@ -1628,9 +1575,9 @@ class App(ctk.CTk):
                     height=38,
                     corner_radius=10,
                     border_width=1,
-                    fg_color="#E7EEF2",
-                    border_color="#8FB7C8",
-                    text_color="#1C2B34",
+                    fg_color=self._input_bg_color,
+                    border_color=self._surface_border,
+                    text_color=self._text_color,
                 )
             except Exception:
                 pass
@@ -1641,10 +1588,10 @@ class App(ctk.CTk):
                 continue
             try:
                 widget.configure(
-                    text_color="#1C2B34",
-                    border_color="#0079BF",
-                    fg_color="#0079BF",
-                    hover_color="#005C86",
+                    text_color=self._text_color,
+                    border_color=UPC_BLUE,
+                    fg_color=UPC_BLUE,
+                    hover_color=UPC_BLUE_TAB,
                 )
             except Exception:
                 pass
@@ -1658,8 +1605,8 @@ class App(ctk.CTk):
                     width=230,
                     height=44,
                     corner_radius=10,
-                    border_color="#8FB7C8",
-                    hover_color="#C8D6DD",
+                    border_color=self._surface_border,
+                    hover_color=self._subtle_panel,
                 )
             except Exception:
                 pass
@@ -1679,11 +1626,11 @@ class App(ctk.CTk):
                 btn.configure(
                     height=self._action_btn_height,
                     corner_radius=10,
-                    fg_color="#D9E3E8",
-                    hover_color="#C8D6DD",
-                    text_color="#1C2B34",
+                    fg_color=self._surface_color,
+                    hover_color=self._subtle_panel,
+                    text_color=self._text_color,
                     border_width=1,
-                    border_color="#8FB7C8",
+                    border_color=self._surface_border,
                 )
             except Exception:
                 pass
@@ -1696,8 +1643,8 @@ class App(ctk.CTk):
                 btn.configure(
                     height=self._action_btn_height,
                     corner_radius=10,
-                    fg_color="#0079BF",
-                    hover_color="#005C86",
+                    fg_color=UPC_BLUE,
+                    hover_color=UPC_BLUE_TAB,
                     text_color="white",
                     border_width=0,
                 )
@@ -1706,7 +1653,7 @@ class App(ctk.CTk):
 
         if hasattr(self, "progress"):
             try:
-                self.progress.configure(progress_color="#005C86", fg_color="#C8D6DD")
+                self.progress.configure(progress_color=UPC_BLUE_TAB, fg_color=self._subtle_panel)
             except Exception:
                 pass
 
@@ -1714,7 +1661,7 @@ class App(ctk.CTk):
             try:
                 self.log2.configure(
                     font=ctk.CTkFont(family="Consolas", size=13),
-                    text_color="#1C2B34",
+                    text_color=self._text_color,
                 )
             except Exception:
                 pass
@@ -1722,7 +1669,7 @@ class App(ctk.CTk):
             try:
                 self.log.configure(
                     font=ctk.CTkFont(family="Consolas", size=13),
-                    text_color="#1C2B34",
+                    text_color=self._text_color,
                 )
             except Exception:
                 pass
@@ -1803,50 +1750,6 @@ class App(ctk.CTk):
         except Exception:
             return False
 
-    def _schedule_home_shadow_refresh(self):
-        if self._home_shadow_job is None:
-            try:
-                self._home_shadow_job = self.after(60, self._refresh_home_card_shadows)
-            except Exception:
-                self._home_shadow_job = None
-
-    def _refresh_home_card_shadows(self):
-        self._home_shadow_job = None
-        pairs = (
-            (
-                "home_download_wrap",
-                "home_download_shadow_soft",
-                "home_download_shadow",
-                "home_download_btn",
-            ),
-            (
-                "home_export_wrap",
-                "home_export_shadow_soft",
-                "home_export_shadow",
-                "home_export_btn",
-            ),
-        )
-        for wrap_name, soft_shadow_name, shadow_name, btn_name in pairs:
-            wrap = getattr(self, wrap_name, None)
-            soft_shadow = getattr(self, soft_shadow_name, None)
-            shadow = getattr(self, shadow_name, None)
-            btn = getattr(self, btn_name, None)
-            if not wrap or not shadow or not btn:
-                continue
-            try:
-                if self._is_pointer_inside_widget(wrap):
-                    if soft_shadow:
-                        soft_shadow.place(x=3, y=3)
-                    shadow.place(x=6, y=6)
-                    btn.lift()
-                else:
-                    shadow.place_forget()
-                    if soft_shadow:
-                        soft_shadow.place_forget()
-            except Exception:
-                pass
-        self._schedule_home_shadow_refresh()
-
     def _apply_white_button_theme(self, root=None):
         node = root or self
         try:
@@ -1904,20 +1807,32 @@ class App(ctk.CTk):
         oauth_path = self._oauth_client_path()
         if self._google_auth_in_progress:
             status = "Google Login en curs..."
-            color = "#1D4ED8"
+            color = UPC_BLUE
         elif not os.path.exists(oauth_path):
             status = f"Falta oauth_client.json ({oauth_path})"
-            color = "#B91C1C"
+            color = DANGER
         elif self._is_google_session_available():
             status = ""
-            color = "#166534"
+            color = SUCCESS
         else:
             status = "Sense sessió activa. Prem 'Iniciar sessió amb Google'."
-            color = "#334155"
+            color = STATUS_NEUTRAL
 
         self.google_auth_status.set(status)
         self._update_google_action_buttons()
         self._sync_google_sheets_rows_visibility()
+        show_status = bool(status.strip())
+        for row_name in ("google_auth_row", "html_google_auth_row"):
+            row = getattr(self, row_name, None)
+            if not row:
+                continue
+            try:
+                if show_status:
+                    row.grid()
+                else:
+                    row.grid_remove()
+            except Exception:
+                pass
         for lbl_name in ("google_auth_status_label_1", "google_auth_status_label_2"):
             lbl = getattr(self, lbl_name, None)
             if lbl:
@@ -1977,8 +1892,6 @@ class App(ctk.CTk):
             self.println("No hi havia cap token actiu per eliminar.")
             messagebox.showinfo("Sortir de Google", "No hi havia cap sessió activa.")
 
-        self._google_profile_image = None
-        self._google_profile_image_token = ""
         self._google_profile_name = ""
         self._google_profile_email = ""
         self._update_google_auth_status()
@@ -2084,7 +1997,12 @@ class App(ctk.CTk):
             text_color=UPC_BLUE,
         ).grid(row=0, column=0, sticky="w", padx=14, pady=(12, 8))
 
-        list_wrap = ctk.CTkScrollableFrame(picker, fg_color="#F8FAFC")
+        list_wrap = ctk.CTkScrollableFrame(
+            picker,
+            fg_color=self._surface_color,
+            scrollbar_button_color=self._scrollbar_color,
+            scrollbar_button_hover_color=self._scrollbar_hover_color,
+        )
         list_wrap.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 10))
         list_wrap.grid_columnconfigure(0, weight=1)
 
@@ -2258,7 +2176,7 @@ class App(ctk.CTk):
             return
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
         except Exception:
             return
@@ -2489,7 +2407,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(
             topic_controls,
             text="Topic",
-            text_color="#334155",
+            text_color=self._muted_text_color,
             font=self._field_label_font,
         ).grid(row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 4))
 
@@ -2499,12 +2417,12 @@ class App(ctk.CTk):
             width=self._topic_form_width,
             placeholder_text="Escriu aqui el topic",
             font=self._input_italic_font,
-            placeholder_text_color="#6B7280",
+            placeholder_text_color=self._placeholder_color,
             height=32,
-            fg_color="#E7EEF2",
+            fg_color=self._input_bg_color,
             border_width=1,
-            border_color="#8FB7C8",
-            text_color="#1C2B34",
+            border_color=self._surface_border,
+            text_color=self._text_color,
         )
         topic_entry.grid(
             row=1, column=0, sticky="w", padx=(0, self._form_row_gap)
@@ -2516,11 +2434,11 @@ class App(ctk.CTk):
             width=28,
             height=28,
             corner_radius=14,
-            fg_color="#EAF9EB",
-            hover_color="#DDF5DF",
-            text_color="#4B7A4E",
+            fg_color=SUCCESS_BG,
+            hover_color=SUCCESS_HOVER,
+            text_color=SUCCESS_TEXT,
             border_width=1,
-            border_color="#CFEBD1",
+            border_color=SUCCESS_BORDER,
             command=lambda: self.add_topic_group(add_initial_url=True),
         )
         add_topic_btn._keep_custom_color = True
@@ -2532,11 +2450,11 @@ class App(ctk.CTk):
             width=28,
             height=28,
             corner_radius=14,
-            fg_color="#FFE9E9",
-            hover_color="#FFDCDC",
-            text_color="#9C4A4A",
+            fg_color=DANGER_BG,
+            hover_color=DANGER_HOVER,
+            text_color=DANGER_TEXT,
             border_width=1,
-            border_color="#F4C9C9",
+            border_color=DANGER_BORDER,
             command=lambda: self.remove_topic_group(group_frame),
         )
         remove_btn._keep_custom_color = True
@@ -2549,7 +2467,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(
             urls_frame,
             text="Web",
-            text_color="#334155",
+            text_color=self._muted_text_color,
             font=self._field_label_font,
         ).pack(anchor="w", pady=(0, 4))
 
@@ -2611,18 +2529,18 @@ class App(ctk.CTk):
                 continue
             try:
                 if disable_remove:
-                    btn.configure(state="disabled", fg_color="#E5E7EB", hover_color="#E5E7EB", text_color="#9CA3AF")
+                    btn.configure(state="disabled", fg_color=self._subtle_panel, hover_color=self._subtle_panel, text_color=self._placeholder_color)
                 else:
                     btn.configure(
                         state="normal",
                         width=28,
                         height=28,
                         corner_radius=14,
-                        fg_color="#FFE9E9",
-                        hover_color="#FFDCDC",
-                        text_color="#9C4A4A",
+                        fg_color=DANGER_BG,
+                        hover_color=DANGER_HOVER,
+                        text_color=DANGER_TEXT,
                         border_width=1,
-                        border_color="#F4C9C9",
+                        border_color=DANGER_BORDER,
                     )
             except Exception:
                 pass
@@ -2650,12 +2568,12 @@ class App(ctk.CTk):
             width=self._url_form_width,
             placeholder_text="Escriu aqui la URLs",
             font=self._input_italic_font,
-            placeholder_text_color="#6B7280",
+            placeholder_text_color=self._placeholder_color,
             height=32,
-            fg_color="#E7EEF2",
+            fg_color=self._input_bg_color,
             border_width=1,
-            border_color="#8FB7C8",
-            text_color="#1C2B34",
+            border_color=self._surface_border,
+            text_color=self._text_color,
         )
         entry.grid(row=0, column=0, sticky="ew", padx=(0, self._form_row_gap))
 
@@ -2665,11 +2583,11 @@ class App(ctk.CTk):
             width=28,
             height=28,
             corner_radius=14,
-            fg_color="#EAF9EB",
-            hover_color="#DDF5DF",
-            text_color="#4B7A4E",
+            fg_color=SUCCESS_BG,
+            hover_color=SUCCESS_HOVER,
+            text_color=SUCCESS_TEXT,
             border_width=1,
-            border_color="#CFEBD1",
+            border_color=SUCCESS_BORDER,
             command=lambda: self.add_url_to_topic(group),
         )
         add_url_btn._keep_custom_color = True
@@ -2681,11 +2599,11 @@ class App(ctk.CTk):
             width=28,
             height=28,
             corner_radius=14,
-            fg_color="#FFE9E9",
-            hover_color="#FFDCDC",
-            text_color="#9C4A4A",
+            fg_color=DANGER_BG,
+            hover_color=DANGER_HOVER,
+            text_color=DANGER_TEXT,
             border_width=1,
-            border_color="#F4C9C9",
+            border_color=DANGER_BORDER,
             command=lambda: self.remove_url_row(group, row_frame),
         )
         remove_url_btn._keep_custom_color = True
@@ -2852,9 +2770,18 @@ class App(ctk.CTk):
     def _on_window_configure(self, event):
         if event is not None and event.widget is not self:
             return
+        try:
+            current_size = (int(event.width), int(event.height)) if event is not None else (
+                int(self.winfo_width() or 0),
+                int(self.winfo_height() or 0),
+            )
+        except Exception:
+            current_size = None
+        if current_size and current_size == self._last_configured_size:
+            return
+        self._last_configured_size = current_size
         self._refresh_centered_content_areas()
         self._refresh_responsive_form_widths()
-        self._ensure_visible_section_state()
         return
 
     def _ensure_visible_section_state(self):
@@ -2992,7 +2919,7 @@ class App(ctk.CTk):
     def _set_entry_valid(self, entry, is_valid: bool, *, neutral_when_empty: bool = False, value: str = ""):
         if not entry:
             return
-        color = "#BDD0E8"
+        color = self._surface_border
         try:
             entry.configure(border_color=color)
         except Exception:
@@ -3552,8 +3479,8 @@ class App(ctk.CTk):
         self.review_list = ctk.CTkScrollableFrame(
             parent,
             fg_color=LIGHT_PANEL,
-            scrollbar_button_color="#9FB6D3",
-            scrollbar_button_hover_color="#7EA2CC",
+            scrollbar_button_color=self._scrollbar_color,
+            scrollbar_button_hover_color=self._scrollbar_hover_color,
         )
         self.review_list.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
         self._setup_auto_scrollbar(self.review_list)
@@ -3631,7 +3558,7 @@ class App(ctk.CTk):
             ctk.CTkLabel(
                 self.review_list,
                 text="No hi ha resultats amb els filtres actuals.",
-                text_color="#6B7280",
+                text_color=self._placeholder_color,
             ).pack(pady=10)
         self._run_live_validation()
 
@@ -3639,7 +3566,7 @@ class App(ctk.CTk):
         sep_wrap = ctk.CTkFrame(parent, fg_color="transparent")
         sep_wrap.pack(fill="x", padx=8, pady=(4, 8))
         # Línia minimalista però visible sobre el fons gris de la llista.
-        sep = ctk.CTkFrame(sep_wrap, fg_color="#B7CBE3", height=2, corner_radius=1)
+        sep = ctk.CTkFrame(sep_wrap, fg_color=self._surface_border, height=2, corner_radius=1)
         sep.pack(fill="x", padx=(58, 12))
 
     def _add_review_row(self, parent, item: FaqItem):
@@ -3693,7 +3620,7 @@ class App(ctk.CTk):
                 anchor="w",
                 justify="left",
                 wraplength=220,
-                text_color="#6B7280",
+                text_color=self._placeholder_color,
                 font=ctk.CTkFont(size=11),
             )
             topic_subtitle.pack(fill="x", pady=(2, 0))
@@ -3781,10 +3708,8 @@ class App(ctk.CTk):
                 if href:
                     tag_name = f"link_{link_count}"
                     link_count += 1
-                    tk_text.tag_configure(tag_name, foreground="#1D4ED8", underline=True)
-                    tk_text.tag_bind(
-                        tag_name, "<Button-1>", lambda _e, u=href: webbrowser.open_new_tab(u)
-                    )
+                    tk_text.tag_configure(tag_name, foreground=LINK, underline=True)
+                    tk_text.tag_bind(tag_name, "<Button-1>", lambda _e, u=href: webbrowser.open_new_tab(u))
                     next_tags.append(tag_name)
 
             if name == "br":
@@ -3887,7 +3812,7 @@ class App(ctk.CTk):
                 textbox.delete("end-2c", "end-1c")
                 end_text = textbox.get("end-2c", "end-1c")
         try:
-            tk_text.configure(disabledforeground="#4B5563")
+            tk_text.configure(disabledforeground=self._muted_text_color)
         except Exception:
             pass
         textbox.configure(state="disabled")
@@ -3941,7 +3866,7 @@ class App(ctk.CTk):
 
 
     def _make_id(self, topic: str, topic_subtitle: str, question: str, source: str) -> str:
-        s = f"{topic}|{topic_subtitle}|{question}|{source}".encode("utf-8")
+        s = f"{topic}|{topic_subtitle}|{question}|{source}".encode()
         return hashlib.sha1(s).hexdigest()[:12]
 
     def copy_generated_code(self):
@@ -3963,15 +3888,15 @@ class App(ctk.CTk):
         tabview.configure(
             fg_color=BG,
 
-            segmented_button_fg_color="#E5E7EB",
+            segmented_button_fg_color=self._subtle_panel,
             segmented_button_selected_color=UPC_BLUE_TAB,
             segmented_button_selected_hover_color=UPC_BLUE_TAB,
-            segmented_button_unselected_color="#F3F4F6",
-            segmented_button_unselected_hover_color="#E5E7EB",
+            segmented_button_unselected_color=self._surface_color,
+            segmented_button_unselected_hover_color=self._subtle_panel,
 
             # IMPORTANT: aquí NO posem blanc, posem fosc perquè les no seleccionades es llegeixin
-            text_color="#111827",
-            text_color_disabled="#9CA3AF",
+            text_color=self._text_color,
+            text_color_disabled=self._placeholder_color,
         )
 
         try:
@@ -3983,8 +3908,8 @@ class App(ctk.CTk):
                 font=ctk.CTkFont(size=13, weight="bold"),
 
                 # Algunes versions permeten aquests camps i arreglen del tot el tema del text:
-                text_color="#111827",
-                text_color_disabled="#9CA3AF",
+                text_color=self._text_color,
+                text_color_disabled=self._placeholder_color,
             )
         except Exception:
             pass
@@ -3996,8 +3921,8 @@ class App(ctk.CTk):
             current = tabview.get()
 
             # Posa totes fosques
-            for name, btn in sb._buttons_dict.items():
-                btn.configure(text_color="#111827")
+            for btn in sb._buttons_dict.values():
+                btn.configure(text_color=self._text_color)
 
             # La seleccionada en blanc
             if current in sb._buttons_dict:

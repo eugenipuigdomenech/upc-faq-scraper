@@ -1,8 +1,8 @@
 ﻿import html
-from typing import Dict, List
-from bs4 import BeautifulSoup
 import re
 import unicodedata
+
+from bs4 import BeautifulSoup
 
 
 def _normalize_text(value: str) -> str:
@@ -14,7 +14,7 @@ def _normalize_text(value: str) -> str:
     return txt
 
 
-def _get_row_value_case_insensitive(row: Dict[str, str], wanted_key: str) -> str:
+def _get_row_value_case_insensitive(row: dict[str, str], wanted_key: str) -> str:
     wanted = _normalize_text(wanted_key)
     aliases = {wanted}
     if wanted == _normalize_text("Subtopic"):
@@ -40,7 +40,7 @@ def _normalize_subtopic(value: str) -> str:
     return text
 
 
-def filter_approved(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+def filter_approved(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     approved_values = {
         "aprovat",
         "aprovada",
@@ -78,10 +78,10 @@ def _answer_to_html_paragraph(answer: str) -> str:
     return a
 
 
-def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
-    def _grouped_by_topic(rows: List[Dict[str, str]]) -> List[tuple[str, List[Dict[str, str]]]]:
-        order: List[str] = []
-        grouped: Dict[str, List[Dict[str, str]]] = {}
+def render_upc_faqaccordion(items: list[dict[str, str]]) -> str:
+    def _grouped_by_topic(rows: list[dict[str, str]]) -> list[tuple[str, list[dict[str, str]]]]:
+        order: list[str] = []
+        grouped: dict[str, list[dict[str, str]]] = {}
         for row in rows:
             subtopic = _normalize_subtopic(_get_row_value_case_insensitive(row, "Subtopic"))
             topic = _get_row_value_case_insensitive(row, "Tema").strip()
@@ -98,7 +98,9 @@ def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
         base = re.sub(r"-{2,}", "-", base).strip("-")
         return base or "topic"
 
-    def _append_question_items(out_lines: List[str], topic_idx: int, topic_items: List[Dict[str, str]], parent_id: str):
+    def _append_question_items(
+        out_lines: list[str], topic_idx: int, topic_items: list[dict[str, str]], parent_id: str
+    ):
         for item_idx, it in enumerate(topic_items, start=1):
             q = (it.get("Pregunta") or "").strip()
             a = (it.get("Resposta") or "").strip()
@@ -134,7 +136,7 @@ def render_upc_faqaccordion(items: List[Dict[str, str]]) -> str:
         for row in items
     )
 
-    out: List[str] = []
+    out: list[str] = []
 
     if not has_real_subtopic and len(topic_blocks) == 1:
         out.append('<div id="faqTopicAccordion" class="accordion" style="margin-bottom: 40px;">')
@@ -350,4 +352,3 @@ def approved_rows_to_html(approved_rows, log=None):
         )
 
     return render_upc_faqaccordion(items)
-
