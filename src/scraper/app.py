@@ -1438,8 +1438,13 @@ class App(ctk.CTk):
             if tab_switch_btn:
                 tab_switch_btn.grid_remove()
         else:
-            if header and not header.winfo_manager():
+            if header and (not header.winfo_manager() or not header.winfo_ismapped()):
                 header.pack(fill="x", before=getattr(self, "body", None))
+                header.pack_propagate(False)
+                try:
+                    header.configure(height=78)
+                except Exception:
+                    pass
             btn.grid(row=0, column=0, sticky="w", padx=(20, 10), pady=8)
             btn.configure(
                 state="normal",
@@ -2782,6 +2787,9 @@ class App(ctk.CTk):
         self._last_configured_size = current_size
         self._refresh_centered_content_areas()
         self._refresh_responsive_form_widths()
+        # En canvis de monitor/DPI a Windows, alguns widgets poden quedar
+        # temporalment desincronitzats encara que l'estat intern segueixi bé.
+        self.after_idle(self._ensure_visible_section_state)
         return
 
     def _ensure_visible_section_state(self):
